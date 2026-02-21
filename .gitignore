@@ -5,6 +5,7 @@ node_modules/
 dist/
 .next/
 out/
+*.tsbuildinfo
 
 # Cairo build artifacts
 contracts/target/
