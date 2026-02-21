@@ -123,7 +123,7 @@ fn test_validate_with_wrong_signature_fails() {
 
     match safe_src6.__validate__(array![]) {
         Result::Ok(_) => panic!("Should have failed with INVALID_SIGNATURE"),
-        Result::Err(_) => (), // panic!("INVALID_SIGNATURE") uses ByteArray format
+        Result::Err(err) => assert(*err.at(0) == 'INVALID_SIGNATURE', 'Wrong error code'),
     }
 
     stop_cheat_signature(addr);

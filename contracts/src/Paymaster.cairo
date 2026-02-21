@@ -5,6 +5,11 @@ use starknet::storage::{
 use starknet::{ContractAddress, get_caller_address, get_block_timestamp};
 
 #[starknet::interface]
+pub trait IERC20<TContractState> {
+    fn transfer(ref self: TContractState, recipient: ContractAddress, amount: u256) -> bool;
+}
+
+#[starknet::interface]
 pub trait IPaymaster<TContractState> {
     fn validate_and_pay(ref self: TContractState, user: ContractAddress, gas_estimate: u256);
     fn whitelist_account(ref self: TContractState, account: ContractAddress);
@@ -18,11 +23,13 @@ pub mod Paymaster {
     use super::{
         Map, StorageMapReadAccess, StorageMapWriteAccess, StoragePointerReadAccess,
         StoragePointerWriteAccess, ContractAddress, get_caller_address, get_block_timestamp,
+        IERC20Dispatcher, IERC20DispatcherTrait,
     };
 
     #[storage]
     struct Storage {
         owner: ContractAddress,
+        strk_token: ContractAddress,
         allowed_accounts: Map<ContractAddress, bool>,
         max_gas_per_tx: u256,
         daily_limit: u256,
@@ -32,9 +39,14 @@ pub mod Paymaster {
 
     #[constructor]
     fn constructor(
-        ref self: ContractState, owner: ContractAddress, max_gas_per_tx: u256, daily_limit: u256,
+        ref self: ContractState,
+        owner: ContractAddress,
+        strk_token: ContractAddress,
+        max_gas_per_tx: u256,
+        daily_limit: u256,
     ) {
         self.owner.write(owner);
+        self.strk_token.write(strk_token);
         self.max_gas_per_tx.write(max_gas_per_tx);
         self.daily_limit.write(daily_limit);
     }
@@ -65,7 +77,8 @@ pub mod Paymaster {
 
         fn withdraw(ref self: ContractState, amount: u256) {
             assert(get_caller_address() == self.owner.read(), 'NOT_OWNER');
-            // TODO: Implement STRK transfer to owner
+            let strk = IERC20Dispatcher { contract_address: self.strk_token.read() };
+            strk.transfer(self.owner.read(), amount);
         }
     }
 

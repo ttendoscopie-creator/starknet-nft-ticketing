@@ -19,13 +19,18 @@ fn user() -> ContractAddress {
 fn attacker() -> ContractAddress {
     contract_address_const::<'attacker'>()
 }
+fn strk_token() -> ContractAddress {
+    // STRK Sepolia: 0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d
+    contract_address_const::<0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d>()
+}
 
 fn deploy_paymaster() -> (IPaymasterDispatcher, IPaymasterSafeDispatcher) {
     let contract = declare("Paymaster").unwrap().contract_class();
     let calldata = array![
-        owner().into(), // owner
-        100000, 0, // max_gas_per_tx = 100_000
-        500000, 0, // daily_limit = 500_000
+        owner().into(),      // owner
+        strk_token().into(), // strk_token
+        100000, 0,           // max_gas_per_tx = 100_000
+        500000, 0,           // daily_limit = 500_000
     ];
     let (addr, _) = contract.deploy(@calldata).unwrap();
     (

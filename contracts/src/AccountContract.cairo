@@ -127,7 +127,8 @@ pub mod AccountContract {
                 return VALIDATED;
             }
 
-            panic!("INVALID_SIGNATURE")
+            assert(false, 'INVALID_SIGNATURE');
+            0
         }
     }
 
