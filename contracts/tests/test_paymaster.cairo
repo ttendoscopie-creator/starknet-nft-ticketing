@@ -27,10 +27,12 @@ fn strk_token() -> ContractAddress {
 fn deploy_paymaster() -> (IPaymasterDispatcher, IPaymasterSafeDispatcher) {
     let contract = declare("Paymaster").unwrap().contract_class();
     let calldata = array![
-        owner().into(),      // owner
+        owner().into(), // owner
         strk_token().into(), // strk_token
-        100000, 0,           // max_gas_per_tx = 100_000
-        500000, 0,           // daily_limit = 500_000
+        100000,
+        0, // max_gas_per_tx = 100_000
+        500000,
+        0 // daily_limit = 500_000
     ];
     let (addr, _) = contract.deploy(@calldata).unwrap();
     (

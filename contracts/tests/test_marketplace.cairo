@@ -8,9 +8,7 @@ use starknet_nft_ticketing::Marketplace::{
     IMarketplaceDispatcher, IMarketplaceDispatcherTrait, IMarketplaceSafeDispatcher,
     IMarketplaceSafeDispatcherTrait,
 };
-use starknet_nft_ticketing::EventTicket::{
-    IEventTicketDispatcher, IEventTicketDispatcherTrait,
-};
+use starknet_nft_ticketing::EventTicket::{IEventTicketDispatcher, IEventTicketDispatcherTrait};
 use starknet_nft_ticketing::MockERC20::{IMockERC20Dispatcher, IMockERC20DispatcherTrait};
 
 fn owner() -> ContractAddress {
@@ -51,20 +49,25 @@ fn deploy_marketplace_with_ticket() -> (
     let mkt_calldata = array![
         owner().into(), // owner
         erc20_addr.into(), // payment_token
-        500, 0, // platform_fee_bps = 500
-        treasury().into(), // platform_treasury
+        500,
+        0, // platform_fee_bps = 500
+        treasury().into() // platform_treasury
     ];
     let (mkt_addr, _) = mkt_class.deploy(@mkt_calldata).unwrap();
 
     // 3. Deploy EventTicket with marketplace = mkt_addr
     let ticket_class = declare("EventTicket").unwrap().contract_class();
     let ticket_calldata = array![
-        100, 0, // max_supply = 100
-        1000000, 0, // primary_price = 1_000_000
-        11000, 0, // resale_cap_bps = 11000 (110%)
-        1000, 0, // royalty_bps = 1000 (10%)
+        100,
+        0, // max_supply = 100
+        1000000,
+        0, // primary_price = 1_000_000
+        11000,
+        0, // resale_cap_bps = 11000 (110%)
+        1000,
+        0, // royalty_bps = 1000 (10%)
         organizer().into(),
-        mkt_addr.into(), // marketplace
+        mkt_addr.into() // marketplace
     ];
     let (ticket_addr, _) = ticket_class.deploy(@ticket_calldata).unwrap();
 

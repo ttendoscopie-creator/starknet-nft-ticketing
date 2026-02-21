@@ -1,6 +1,4 @@
-use starknet::storage::{
-    Map, StorageMapReadAccess, StorageMapWriteAccess,
-};
+use starknet::storage::{Map, StorageMapReadAccess, StorageMapWriteAccess};
 use starknet::ContractAddress;
 
 #[starknet::interface]

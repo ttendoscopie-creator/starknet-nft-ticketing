@@ -24,7 +24,7 @@ fn deploy_account() -> (
     ISessionAccountDispatcher,
     ISessionAccountSafeDispatcher,
     felt252, // owner secret key
-    felt252, // owner public key
+    felt252 // owner public key
 ) {
     let key_pair = StarkCurveKeyPairImpl::generate();
     let contract = declare("AccountContract").unwrap().contract_class();
@@ -40,9 +40,7 @@ fn deploy_account() -> (
     )
 }
 
-fn sign_hash(
-    secret_key: felt252, hash: felt252,
-) -> (felt252, felt252) {
+fn sign_hash(secret_key: felt252, hash: felt252) -> (felt252, felt252) {
     let key_pair = StarkCurveKeyPairImpl::from_secret_key(secret_key);
     let result = key_pair.sign(hash);
     match result {

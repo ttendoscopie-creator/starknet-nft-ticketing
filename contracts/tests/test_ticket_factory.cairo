@@ -8,9 +8,7 @@ use core::num::traits::Zero;
 use starknet_nft_ticketing::TicketFactory::{
     ITicketFactoryDispatcher, ITicketFactoryDispatcherTrait,
 };
-use starknet_nft_ticketing::EventTicket::{
-    IEventTicketDispatcher, IEventTicketDispatcherTrait,
-};
+use starknet_nft_ticketing::EventTicket::{IEventTicketDispatcher, IEventTicketDispatcherTrait};
 
 fn owner() -> ContractAddress {
     contract_address_const::<'owner'>()
@@ -28,7 +26,7 @@ fn marketplace_addr() -> ContractAddress {
 fn deploy_factory() -> ITicketFactoryDispatcher {
     let ticket_class = declare("EventTicket").unwrap().contract_class();
     let factory_class = declare("TicketFactory").unwrap().contract_class();
-    let calldata = array![(*ticket_class.class_hash).into(), owner().into(),];
+    let calldata = array![(*ticket_class.class_hash).into(), owner().into()];
     let (addr, _) = factory_class.deploy(@calldata).unwrap();
     ITicketFactoryDispatcher { contract_address: addr }
 }
@@ -39,7 +37,8 @@ fn test_create_event_success() {
     let factory = deploy_factory();
 
     start_cheat_caller_address(factory.contract_address, organizer());
-    let event_addr = factory.create_event(100_u256, 1000000_u256, 11000_u256, 1000_u256, marketplace_addr());
+    let event_addr = factory
+        .create_event(100_u256, 1000000_u256, 11000_u256, 1000_u256, marketplace_addr());
     stop_cheat_caller_address(factory.contract_address);
 
     assert(!event_addr.is_zero(), 'Event address should not be 0');
@@ -53,8 +52,10 @@ fn test_create_multiple_events() {
     let factory = deploy_factory();
 
     start_cheat_caller_address(factory.contract_address, organizer());
-    let addr1 = factory.create_event(50_u256, 500000_u256, 11000_u256, 500_u256, marketplace_addr());
-    let addr2 = factory.create_event(200_u256, 2000000_u256, 12000_u256, 1000_u256, marketplace_addr());
+    let addr1 = factory
+        .create_event(50_u256, 500000_u256, 11000_u256, 500_u256, marketplace_addr());
+    let addr2 = factory
+        .create_event(200_u256, 2000000_u256, 12000_u256, 1000_u256, marketplace_addr());
     stop_cheat_caller_address(factory.contract_address);
 
     assert_eq!(factory.get_event_count(), 2_u256);
@@ -69,7 +70,8 @@ fn test_deployed_ticket_is_functional() {
     let factory = deploy_factory();
 
     start_cheat_caller_address(factory.contract_address, organizer());
-    let event_addr = factory.create_event(100_u256, 1000000_u256, 11000_u256, 1000_u256, marketplace_addr());
+    let event_addr = factory
+        .create_event(100_u256, 1000000_u256, 11000_u256, 1000_u256, marketplace_addr());
     stop_cheat_caller_address(factory.contract_address);
 
     // The organizer of the deployed ticket is whoever called create_event
@@ -89,7 +91,8 @@ fn test_create_event_emits_event() {
     let mut spy = spy_events();
 
     start_cheat_caller_address(factory.contract_address, organizer());
-    let event_addr = factory.create_event(100_u256, 1000000_u256, 11000_u256, 1000_u256, marketplace_addr());
+    let event_addr = factory
+        .create_event(100_u256, 1000000_u256, 11000_u256, 1000_u256, marketplace_addr());
     stop_cheat_caller_address(factory.contract_address);
 
     spy
