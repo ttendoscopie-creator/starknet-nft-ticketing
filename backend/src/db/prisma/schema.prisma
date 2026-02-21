@@ -1,0 +1,96 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Organizer {
+  id               String   @id @default(uuid())
+  name             String
+  treasuryAddress  String
+  paymasterAddress String
+  apiKey           String   @unique
+  createdAt        DateTime @default(now())
+  events           Event[]
+}
+
+model Event {
+  id              String       @id @default(uuid())
+  organizerId     String
+  organizer       Organizer    @relation(fields: [organizerId], references: [id])
+  contractAddress String       @unique
+  name            String
+  eventDate       DateTime
+  maxSupply       Int
+  resaleCapBps    Int          @default(11000)
+  royaltyBps      Int          @default(1000)
+  metadataBaseUri String?
+  createdAt       DateTime     @default(now())
+  tickets         Ticket[]
+  pendingMints    PendingMint[]
+}
+
+model Ticket {
+  id                  String       @id @default(uuid())
+  eventId             String
+  event               Event        @relation(fields: [eventId], references: [id])
+  tokenId             BigInt
+  ownerAddress        String
+  ownerEmail          String?
+  status              TicketStatus @default(AVAILABLE)
+  lastTransactionHash String?
+  updatedAt           DateTime     @updatedAt
+  scanLogs            ScanLog[]
+  listings            Listing[]
+
+  @@unique([eventId, tokenId])
+}
+
+enum TicketStatus {
+  AVAILABLE
+  LISTED
+  USED
+  CANCELLED
+}
+
+model Listing {
+  id               String   @id @default(uuid())
+  ticketId         String
+  ticket           Ticket   @relation(fields: [ticketId], references: [id])
+  sellerAddress    String
+  price            Decimal
+  isActive         Boolean  @default(true)
+  onChainListingId BigInt?
+  createdAt        DateTime @default(now())
+}
+
+model ScanLog {
+  id                  String     @id @default(uuid())
+  ticketId            String
+  ticket              Ticket     @relation(fields: [ticketId], references: [id])
+  scannedAt           DateTime   @default(now())
+  scannerStaffId      String?
+  gateId              String?
+  isOfflineValidation Boolean    @default(false)
+  syncStatus          SyncStatus @default(PENDING)
+}
+
+enum SyncStatus {
+  PENDING
+  SYNCED
+}
+
+model PendingMint {
+  id                    String   @id @default(uuid())
+  eventId               String
+  event                 Event    @relation(fields: [eventId], references: [id])
+  stripePaymentIntentId String   @unique
+  buyerEmail            String
+  buyerWalletAddress    String?
+  status                String   @default("PENDING")
+  txHash                String?
+  createdAt             DateTime @default(now())
+}

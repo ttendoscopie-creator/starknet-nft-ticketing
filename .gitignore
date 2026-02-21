@@ -1,0 +1,24 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+.next/
+out/
+
+# Cairo build artifacts
+contracts/target/
+contracts/.snfoundry_cache/
+
+# Environment
+.env
+.env.local
+
+# Prisma
+backend/src/db/prisma/migrations/
+
+# OS
+.DS_Store
+
+# Deploy artifacts
+deploy/deployments.json

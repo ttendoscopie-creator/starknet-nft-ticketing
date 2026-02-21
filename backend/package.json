@@ -1,0 +1,37 @@
+{
+  "name": "starknet-ticketing-backend",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/api/server.ts",
+    "build": "tsc",
+    "start": "node dist/api/server.js",
+    "test": "vitest",
+    "db:migrate": "prisma migrate dev --schema=src/db/prisma/schema.prisma",
+    "db:generate": "prisma generate --schema=src/db/prisma/schema.prisma",
+    "indexer": "tsx src/indexer/starknet-indexer.ts"
+  },
+  "dependencies": {
+    "@fastify/cors": "^9",
+    "@fastify/rate-limit": "^9",
+    "@prisma/client": "^5",
+    "bullmq": "^5",
+    "fastify": "^4",
+    "ioredis": "^5",
+    "jsonwebtoken": "^9",
+    "qrcode": "^1.5",
+    "starknet": "^6",
+    "stripe": "^14",
+    "zod": "^3"
+  },
+  "devDependencies": {
+    "@types/jsonwebtoken": "^9",
+    "@types/node": "^20",
+    "@types/qrcode": "^1",
+    "pino-pretty": "^11",
+    "prisma": "^5",
+    "tsx": "^4",
+    "typescript": "^5",
+    "vitest": "^1"
+  }
+}
