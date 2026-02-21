@@ -107,6 +107,7 @@ async def main():
     paymaster_deploy = await paymaster_declare.deploy_v3(
         constructor_args={
             "owner": DEPLOYER_ADDRESS,
+            "strk_token": STRK_ADDRESS,
             "max_gas_per_tx": 500000,
             "daily_limit": 50000000,
         },
@@ -161,9 +162,14 @@ def read_contract(name: str) -> dict:
     if not casm_path.exists():
         raise FileNotFoundError(f"CASM file not found: {casm_path}")
 
+    # Patch CASM: starknet-py 0.25 requires pythonic_hints but Scarb 2.9 omits it
+    casm_data = json.loads(casm_path.read_text())
+    if "pythonic_hints" not in casm_data:
+        casm_data["pythonic_hints"] = []
+
     return {
         "sierra": sierra_path.read_text(),
-        "casm": casm_path.read_text(),
+        "casm": json.dumps(casm_data),
     }
 
 
