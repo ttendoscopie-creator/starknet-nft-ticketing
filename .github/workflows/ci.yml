@@ -50,7 +50,7 @@ jobs:
           cache-dependency-path: backend/package-lock.json
       - run: npm ci
         working-directory: backend
-      - run: npx prisma generate
+      - run: npx prisma generate --schema=src/db/prisma/schema.prisma
         working-directory: backend
       - run: npx tsc --noEmit
         working-directory: backend
