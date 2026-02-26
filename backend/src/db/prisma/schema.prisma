@@ -25,12 +25,17 @@ model Event {
   name            String
   eventDate       DateTime
   maxSupply       Int
+  primaryPrice    BigInt       @default(1000000)
   resaleCapBps    Int          @default(11000)
   royaltyBps      Int          @default(1000)
   metadataBaseUri String?
-  createdAt       DateTime     @default(now())
-  tickets         Ticket[]
-  pendingMints    PendingMint[]
+  isSoulbound          Boolean      @default(false)
+  maxTransfers         Int          @default(0)
+  paymentTokenAddress  String?
+  acceptedCurrencies   String[]     @default(["STRK"])
+  createdAt            DateTime     @default(now())
+  tickets              Ticket[]
+  pendingMints         PendingMint[]
 }
 
 model Ticket {
@@ -41,6 +46,7 @@ model Ticket {
   ownerAddress        String
   ownerEmail          String?
   status              TicketStatus @default(AVAILABLE)
+  transferCount       Int          @default(0)
   lastTransactionHash String?
   updatedAt           DateTime     @updatedAt
   scanLogs            ScanLog[]
@@ -54,6 +60,7 @@ enum TicketStatus {
   LISTED
   USED
   CANCELLED
+  REVOKED
 }
 
 model Listing {
@@ -87,10 +94,13 @@ model PendingMint {
   id                    String   @id @default(uuid())
   eventId               String
   event                 Event    @relation(fields: [eventId], references: [id])
-  stripePaymentIntentId String   @unique
+  stripePaymentIntentId String?  @unique
   buyerEmail            String
   buyerWalletAddress    String?
   status                String   @default("PENDING")
   txHash                String?
+  cryptoTxHash          String?
+  paymentAmount         BigInt?
+  paymentCurrency       String?
   createdAt             DateTime @default(now())
 }

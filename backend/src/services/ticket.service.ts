@@ -77,4 +77,21 @@ export async function logScan(params: {
   });
 }
 
+export async function revokeTicket(ticketId: string, txHash?: string) {
+  return prisma.$transaction([
+    prisma.ticket.update({
+      where: { id: ticketId },
+      data: {
+        status: "REVOKED",
+        ownerAddress: "0x0",
+        lastTransactionHash: txHash,
+      },
+    }),
+    prisma.listing.updateMany({
+      where: { ticketId, isActive: true },
+      data: { isActive: false },
+    }),
+  ]);
+}
+
 export { prisma };

@@ -55,19 +55,78 @@ fn deploy_marketplace_with_ticket() -> (
     ];
     let (mkt_addr, _) = mkt_class.deploy(@mkt_calldata).unwrap();
 
-    // 3. Deploy EventTicket with marketplace = mkt_addr
+    // 3. Deploy EventTicket with marketplace = mkt_addr (non-soulbound, unlimited transfers)
+    let ticket_class = declare("EventTicket").unwrap().contract_class();
+    let ticket_calldata = array![
+        100, // max_supply: u64
+        1000000, // primary_price: u128
+        11000, // resale_cap_bps: u16 (110%)
+        1000, // royalty_bps: u16 (10%)
+        organizer().into(),
+        mkt_addr.into(), // marketplace (added to whitelist)
+        0, // soulbound: false
+        0 // max_transfers: 0 (unlimited)
+    ];
+    let (ticket_addr, _) = ticket_class.deploy(@ticket_calldata).unwrap();
+
+    (
+        IMarketplaceDispatcher { contract_address: mkt_addr },
+        IMarketplaceSafeDispatcher { contract_address: mkt_addr },
+        IEventTicketDispatcher { contract_address: ticket_addr },
+        IMockERC20Dispatcher { contract_address: erc20_addr },
+    )
+}
+
+fn deploy_marketplace_with_soulbound_ticket() -> (
+    IMarketplaceSafeDispatcher, IEventTicketDispatcher,
+) {
+    let erc20_class = declare("MockERC20").unwrap().contract_class();
+    let erc20_calldata = array![buyer_addr().into(), 10000000, 0];
+    let (erc20_addr, _) = erc20_class.deploy(@erc20_calldata).unwrap();
+
+    let mkt_class = declare("Marketplace").unwrap().contract_class();
+    let mkt_calldata = array![owner().into(), erc20_addr.into(), 500, 0, treasury().into()];
+    let (mkt_addr, _) = mkt_class.deploy(@mkt_calldata).unwrap();
+
+    // Soulbound ticket
+    let ticket_class = declare("EventTicket").unwrap().contract_class();
+    let ticket_calldata = array![
+        100, 1000000, 11000, 1000, organizer().into(), mkt_addr.into(), 1, // soulbound: true
+        0,
+    ];
+    let (ticket_addr, _) = ticket_class.deploy(@ticket_calldata).unwrap();
+
+    (
+        IMarketplaceSafeDispatcher { contract_address: mkt_addr },
+        IEventTicketDispatcher { contract_address: ticket_addr },
+    )
+}
+
+fn deploy_marketplace_with_transfer_limited_ticket() -> (
+    IMarketplaceDispatcher,
+    IMarketplaceSafeDispatcher,
+    IEventTicketDispatcher,
+    IMockERC20Dispatcher,
+) {
+    let erc20_class = declare("MockERC20").unwrap().contract_class();
+    let erc20_calldata = array![buyer_addr().into(), 10000000, 0];
+    let (erc20_addr, _) = erc20_class.deploy(@erc20_calldata).unwrap();
+
+    let mkt_class = declare("Marketplace").unwrap().contract_class();
+    let mkt_calldata = array![owner().into(), erc20_addr.into(), 500, 0, treasury().into()];
+    let (mkt_addr, _) = mkt_class.deploy(@mkt_calldata).unwrap();
+
+    // Transfer-limited ticket (max 1 transfer)
     let ticket_class = declare("EventTicket").unwrap().contract_class();
     let ticket_calldata = array![
         100,
-        0, // max_supply = 100
         1000000,
-        0, // primary_price = 1_000_000
         11000,
-        0, // resale_cap_bps = 11000 (110%)
         1000,
-        0, // royalty_bps = 1000 (10%)
         organizer().into(),
-        mkt_addr.into() // marketplace
+        mkt_addr.into(),
+        0, // soulbound: false
+        1 // max_transfers: 1
     ];
     let (ticket_addr, _) = ticket_class.deploy(@ticket_calldata).unwrap();
 
@@ -84,6 +143,10 @@ fn mint_ticket_to_seller(ticket: IEventTicketDispatcher, token_id: u256) {
     ticket.mint(seller(), token_id);
     stop_cheat_caller_address(ticket.contract_address);
 }
+
+// ═══════════════════════════════════════════════════════
+// EXISTING TESTS
+// ═══════════════════════════════════════════════════════
 
 // TEST 1: Create listing success
 #[test]
@@ -303,4 +366,57 @@ fn test_buy_listing_payment_distribution_correct() {
     assert_eq!(erc20.balance_of(treasury()), 50000_u256);
     assert_eq!(erc20.balance_of(seller()), 850000_u256);
     assert_eq!(ticket.owner_of(1_u256), buyer_addr());
+}
+
+// ═══════════════════════════════════════════════════════
+// MODULE 6: SOULBOUND MARKETPLACE TESTS
+// ═══════════════════════════════════════════════════════
+
+// TEST 12: Create listing for soulbound ticket -> TICKET_SOULBOUND
+#[test]
+#[feature("safe_dispatcher")]
+fn test_create_listing_soulbound_ticket_fails() {
+    let (safe_mkt, ticket) = deploy_marketplace_with_soulbound_ticket();
+    mint_ticket_to_seller(ticket, 1_u256);
+
+    cheat_caller_address(safe_mkt.contract_address, seller(), CheatSpan::TargetCalls(1));
+    match safe_mkt.create_listing(ticket.contract_address, 1_u256, 500000_u256) {
+        Result::Ok(_) => panic!("Should have failed with TICKET_SOULBOUND"),
+        Result::Err(err) => assert(*err.at(0) == 'TICKET_SOULBOUND', 'Wrong error code'),
+    }
+}
+
+// ═══════════════════════════════════════════════════════
+// MODULE 8: TRANSFER LIMIT MARKETPLACE TESTS
+// ═══════════════════════════════════════════════════════
+
+// TEST 13: Buy listing respects transfer limit
+#[test]
+#[feature("safe_dispatcher")]
+fn test_buy_listing_respects_transfer_limit() {
+    let (mkt, safe_mkt, ticket, _) = deploy_marketplace_with_transfer_limited_ticket();
+    mint_ticket_to_seller(ticket, 1_u256);
+
+    // First sale: seller -> buyer at 500_000 (transfer 1/1)
+    start_cheat_caller_address(mkt.contract_address, seller());
+    let listing_id = mkt.create_listing(ticket.contract_address, 1_u256, 500000_u256);
+    stop_cheat_caller_address(mkt.contract_address);
+
+    start_cheat_caller_address(mkt.contract_address, buyer_addr());
+    mkt.buy_listing(listing_id);
+    stop_cheat_caller_address(mkt.contract_address);
+
+    assert_eq!(ticket.owner_of(1_u256), buyer_addr());
+
+    // Second sale: buyer -> seller at 100_000 (seller has 425_000 from first sale, enough)
+    // max_transfers=1, so this should fail with MAX_TRANSFERS_REACHED
+    start_cheat_caller_address(mkt.contract_address, buyer_addr());
+    let listing_id2 = mkt.create_listing(ticket.contract_address, 1_u256, 100000_u256);
+    stop_cheat_caller_address(mkt.contract_address);
+
+    cheat_caller_address(safe_mkt.contract_address, seller(), CheatSpan::TargetCalls(1));
+    match safe_mkt.buy_listing(listing_id2) {
+        Result::Ok(_) => panic!("Should have failed with MAX_TRANSFERS_REACHED"),
+        Result::Err(err) => assert(*err.at(0) == 'MAX_TRANSFERS_REACHED', 'Wrong error code'),
+    }
 }

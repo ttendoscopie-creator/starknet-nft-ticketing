@@ -109,7 +109,8 @@ async def main():
             "owner": DEPLOYER_ADDRESS,
             "strk_token": STRK_ADDRESS,
             "max_gas_per_tx": 500000,
-            "daily_limit": 50000000,
+            "max_txs_per_day": 100,
+            "min_interval": 60,
         },
     )
     await paymaster_deploy.wait_for_acceptance()

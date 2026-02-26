@@ -1,17 +1,19 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
-const { mockExecute, mockWaitForTransaction, mockCallContract, mockToHex, mockCompile } = vi.hoisted(() => ({
+const { mockExecute, mockWaitForTransaction, mockCallContract, mockToHex, mockCompile, mockGetTransactionReceipt } = vi.hoisted(() => ({
   mockExecute: vi.fn(),
   mockWaitForTransaction: vi.fn(),
   mockCallContract: vi.fn(),
   mockToHex: vi.fn(),
   mockCompile: vi.fn(),
+  mockGetTransactionReceipt: vi.fn(),
 }));
 
 vi.mock("starknet", () => ({
   RpcProvider: vi.fn(() => ({
     waitForTransaction: mockWaitForTransaction,
     callContract: mockCallContract,
+    getTransactionReceipt: mockGetTransactionReceipt,
   })),
   Account: vi.fn(() => ({
     execute: mockExecute,
@@ -24,7 +26,7 @@ vi.mock("starknet", () => ({
   },
 }));
 
-import { mintTicket, markUsedBatch, getOwner, isUsed } from "../starknet.service";
+import { mintTicket, markUsedBatch, getOwner, isUsed, verifyERC20Transfer, getERC20Balance } from "../starknet.service";
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -120,5 +122,47 @@ describe("isUsed", () => {
 
     const result = await isUsed("0xcontract", 1n);
     expect(result).toBe(false);
+  });
+});
+
+describe("verifyERC20Transfer", () => {
+  it("returns true when Transfer event matches expected recipient and amount", async () => {
+    mockGetTransactionReceipt.mockResolvedValue({
+      statusReceipt: "success",
+      events: [
+        {
+          from_address: "0xtoken",
+          data: ["0xsender", "0xrecipient", "0x100", "0x0"],
+        },
+      ],
+    });
+
+    const result = await verifyERC20Transfer("0xtx", "0xrecipient", 256n, "0xtoken");
+    expect(result).toBe(true);
+  });
+
+  it("returns false when receipt status is not success", async () => {
+    mockGetTransactionReceipt.mockResolvedValue({
+      statusReceipt: "reverted",
+      events: [],
+    });
+
+    const result = await verifyERC20Transfer("0xtx", "0xrecipient", 100n, "0xtoken");
+    expect(result).toBe(false);
+  });
+});
+
+describe("getERC20Balance", () => {
+  it("returns balance from balance_of call", async () => {
+    mockCallContract.mockResolvedValue(["0x3e8", "0x0"]); // 1000
+
+    const balance = await getERC20Balance("0xtoken", "0xaccount");
+    expect(balance).toBe(1000n);
+    expect(mockCallContract).toHaveBeenCalledWith(
+      expect.objectContaining({
+        contractAddress: "0xtoken",
+        entrypoint: "balance_of",
+      })
+    );
   });
 });

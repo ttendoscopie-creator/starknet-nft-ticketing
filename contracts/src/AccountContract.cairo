@@ -1,6 +1,6 @@
 use starknet::storage::{StoragePointerReadAccess, StoragePointerWriteAccess};
 use starknet::account::Call;
-use starknet::{VALIDATED, get_caller_address, get_block_timestamp, get_tx_info};
+use starknet::{VALIDATED, get_caller_address, get_block_timestamp, get_tx_info, ContractAddress};
 use core::ecdsa::check_ecdsa_signature;
 use core::num::traits::Zero;
 
@@ -22,11 +22,22 @@ pub trait ISessionAccount<TContractState> {
     fn get_owner_pubkey(self: @TContractState) -> felt252;
 }
 
+#[starknet::interface]
+pub trait IRecoverableAccount<TContractState> {
+    fn set_guardian(ref self: TContractState, new_guardian: ContractAddress);
+    fn get_guardian(self: @TContractState) -> ContractAddress;
+    fn initiate_recovery(ref self: TContractState, new_owner_pubkey: felt252);
+    fn execute_recovery(ref self: TContractState);
+    fn cancel_recovery(ref self: TContractState);
+    fn rotate_owner_key(ref self: TContractState, new_pubkey: felt252);
+    fn get_recovery_status(self: @TContractState) -> (felt252, u64);
+}
+
 #[starknet::contract(account)]
 pub mod AccountContract {
     use super::{
         StoragePointerReadAccess, StoragePointerWriteAccess, Call, VALIDATED, get_caller_address,
-        get_block_timestamp, get_tx_info, check_ecdsa_signature, Zero,
+        get_block_timestamp, get_tx_info, check_ecdsa_signature, Zero, ContractAddress,
     };
     use starknet::syscalls::call_contract_syscall;
     use starknet::SyscallResultTrait;
@@ -38,12 +49,59 @@ pub mod AccountContract {
         session_expiry: u64,
         session_scope: felt252,
         nonce: felt252,
+        guardian: ContractAddress,
+        pending_new_owner: felt252,
+        recovery_initiated_at: u64,
+        recovery_delay: u64,
+    }
+
+    #[event]
+    #[derive(Drop, starknet::Event)]
+    pub enum Event {
+        GuardianSet: GuardianSet,
+        RecoveryInitiated: RecoveryInitiated,
+        RecoveryExecuted: RecoveryExecuted,
+        RecoveryCancelled: RecoveryCancelled,
+        OwnerKeyRotated: OwnerKeyRotated,
+    }
+
+    #[derive(Drop, starknet::Event)]
+    pub struct GuardianSet {
+        #[key]
+        pub new_guardian: ContractAddress,
+    }
+
+    #[derive(Drop, starknet::Event)]
+    pub struct RecoveryInitiated {
+        #[key]
+        pub new_owner_pubkey: felt252,
+        pub initiated_at: u64,
+    }
+
+    #[derive(Drop, starknet::Event)]
+    pub struct RecoveryExecuted {
+        pub new_owner_pubkey: felt252,
+    }
+
+    #[derive(Drop, starknet::Event)]
+    pub struct RecoveryCancelled {}
+
+    #[derive(Drop, starknet::Event)]
+    pub struct OwnerKeyRotated {
+        pub new_pubkey: felt252,
     }
 
     #[constructor]
-    fn constructor(ref self: ContractState, owner_pubkey: felt252) {
+    fn constructor(
+        ref self: ContractState,
+        owner_pubkey: felt252,
+        guardian: ContractAddress,
+        recovery_delay: u64,
+    ) {
         assert(!owner_pubkey.is_zero(), 'INVALID_PUBKEY');
         self.owner_pubkey.write(owner_pubkey);
+        self.guardian.write(guardian);
+        self.recovery_delay.write(recovery_delay);
     }
 
     #[abi(embed_v0)]
@@ -105,6 +163,72 @@ pub mod AccountContract {
         }
     }
 
+    #[abi(embed_v0)]
+    impl RecoverableAccountImpl of super::IRecoverableAccount<ContractState> {
+        fn set_guardian(ref self: ContractState, new_guardian: ContractAddress) {
+            assert(get_caller_address().is_zero(), 'INVALID_CALLER');
+            self.guardian.write(new_guardian);
+            self.emit(Event::GuardianSet(GuardianSet { new_guardian }));
+        }
+
+        fn get_guardian(self: @ContractState) -> ContractAddress {
+            self.guardian.read()
+        }
+
+        fn initiate_recovery(ref self: ContractState, new_owner_pubkey: felt252) {
+            let caller = get_caller_address();
+            assert(caller == self.guardian.read(), 'NOT_GUARDIAN');
+            assert(!new_owner_pubkey.is_zero(), 'INVALID_PUBKEY');
+            let now = get_block_timestamp();
+            self.pending_new_owner.write(new_owner_pubkey);
+            self.recovery_initiated_at.write(now);
+            self
+                .emit(
+                    Event::RecoveryInitiated(
+                        RecoveryInitiated { new_owner_pubkey, initiated_at: now },
+                    ),
+                );
+        }
+
+        fn execute_recovery(ref self: ContractState) {
+            let caller = get_caller_address();
+            assert(caller == self.guardian.read(), 'NOT_GUARDIAN');
+            let pending = self.pending_new_owner.read();
+            assert(!pending.is_zero(), 'NO_PENDING_RECOVERY');
+            let now = get_block_timestamp();
+            let initiated_at = self.recovery_initiated_at.read();
+            let delay = self.recovery_delay.read();
+            assert(now >= initiated_at + delay, 'RECOVERY_TOO_EARLY');
+            // Apply recovery
+            self.owner_pubkey.write(pending);
+            // Reset recovery state
+            self.pending_new_owner.write(0);
+            self.recovery_initiated_at.write(0);
+            // Revoke session key
+            self.session_pubkey.write(0);
+            self.session_expiry.write(0);
+            self.emit(Event::RecoveryExecuted(RecoveryExecuted { new_owner_pubkey: pending }));
+        }
+
+        fn cancel_recovery(ref self: ContractState) {
+            assert(get_caller_address().is_zero(), 'INVALID_CALLER');
+            self.pending_new_owner.write(0);
+            self.recovery_initiated_at.write(0);
+            self.emit(Event::RecoveryCancelled(RecoveryCancelled {}));
+        }
+
+        fn rotate_owner_key(ref self: ContractState, new_pubkey: felt252) {
+            assert(get_caller_address().is_zero(), 'INVALID_CALLER');
+            assert(!new_pubkey.is_zero(), 'INVALID_PUBKEY');
+            self.owner_pubkey.write(new_pubkey);
+            self.emit(Event::OwnerKeyRotated(OwnerKeyRotated { new_pubkey }));
+        }
+
+        fn get_recovery_status(self: @ContractState) -> (felt252, u64) {
+            (self.pending_new_owner.read(), self.recovery_initiated_at.read())
+        }
+    }
+
     #[generate_trait]
     impl InternalImpl of InternalTrait {
         fn _validate_transaction(self: @ContractState) -> felt252 {
@@ -139,7 +263,12 @@ pub mod AccountContract {
 
     #[external(v0)]
     fn __validate_deploy__(
-        ref self: ContractState, class_hash: felt252, salt: felt252, owner_pubkey: felt252,
+        ref self: ContractState,
+        class_hash: felt252,
+        salt: felt252,
+        owner_pubkey: felt252,
+        guardian: ContractAddress,
+        recovery_delay: u64,
     ) -> felt252 {
         self._validate_transaction()
     }

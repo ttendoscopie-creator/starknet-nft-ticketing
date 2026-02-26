@@ -38,7 +38,7 @@ fn test_create_event_success() {
 
     start_cheat_caller_address(factory.contract_address, organizer());
     let event_addr = factory
-        .create_event(100_u256, 1000000_u256, 11000_u256, 1000_u256, marketplace_addr());
+        .create_event(100_u64, 1000000_u128, 11000_u16, 1000_u16, marketplace_addr(), false, 0_u32);
     stop_cheat_caller_address(factory.contract_address);
 
     assert(!event_addr.is_zero(), 'Event address should not be 0');
@@ -53,9 +53,9 @@ fn test_create_multiple_events() {
 
     start_cheat_caller_address(factory.contract_address, organizer());
     let addr1 = factory
-        .create_event(50_u256, 500000_u256, 11000_u256, 500_u256, marketplace_addr());
+        .create_event(50_u64, 500000_u128, 11000_u16, 500_u16, marketplace_addr(), false, 0_u32);
     let addr2 = factory
-        .create_event(200_u256, 2000000_u256, 12000_u256, 1000_u256, marketplace_addr());
+        .create_event(200_u64, 2000000_u128, 12000_u16, 1000_u16, marketplace_addr(), false, 0_u32);
     stop_cheat_caller_address(factory.contract_address);
 
     assert_eq!(factory.get_event_count(), 2_u256);
@@ -71,10 +71,9 @@ fn test_deployed_ticket_is_functional() {
 
     start_cheat_caller_address(factory.contract_address, organizer());
     let event_addr = factory
-        .create_event(100_u256, 1000000_u256, 11000_u256, 1000_u256, marketplace_addr());
+        .create_event(100_u64, 1000000_u128, 11000_u16, 1000_u16, marketplace_addr(), false, 0_u32);
     stop_cheat_caller_address(factory.contract_address);
 
-    // The organizer of the deployed ticket is whoever called create_event
     let ticket = IEventTicketDispatcher { contract_address: event_addr };
     start_cheat_caller_address(event_addr, organizer());
     ticket.mint(buyer(), 1_u256);
@@ -92,7 +91,7 @@ fn test_create_event_emits_event() {
 
     start_cheat_caller_address(factory.contract_address, organizer());
     let event_addr = factory
-        .create_event(100_u256, 1000000_u256, 11000_u256, 1000_u256, marketplace_addr());
+        .create_event(100_u64, 1000000_u128, 11000_u16, 1000_u16, marketplace_addr(), false, 0_u32);
     stop_cheat_caller_address(factory.contract_address);
 
     spy
@@ -115,4 +114,37 @@ fn test_create_event_emits_event() {
 fn test_event_count_starts_at_zero() {
     let factory = deploy_factory();
     assert_eq!(factory.get_event_count(), 0_u256);
+}
+
+// ═══════════════════════════════════════════════════════
+// NEW TESTS: SOULBOUND + TRANSFER LIMITS VIA FACTORY
+// ═══════════════════════════════════════════════════════
+
+// TEST 6: Create soulbound event
+#[test]
+fn test_create_soulbound_event() {
+    let factory = deploy_factory();
+
+    start_cheat_caller_address(factory.contract_address, organizer());
+    let event_addr = factory
+        .create_event(100_u64, 1000000_u128, 11000_u16, 1000_u16, marketplace_addr(), true, 0_u32);
+    stop_cheat_caller_address(factory.contract_address);
+
+    let ticket = IEventTicketDispatcher { contract_address: event_addr };
+    assert_eq!(ticket.is_soulbound(), true);
+}
+
+// TEST 7: Create event with transfer limit
+#[test]
+fn test_create_event_with_transfer_limit() {
+    let factory = deploy_factory();
+
+    start_cheat_caller_address(factory.contract_address, organizer());
+    let event_addr = factory
+        .create_event(100_u64, 1000000_u128, 11000_u16, 1000_u16, marketplace_addr(), false, 3_u32);
+    stop_cheat_caller_address(factory.contract_address);
+
+    let ticket = IEventTicketDispatcher { contract_address: event_addr };
+    assert_eq!(ticket.is_soulbound(), false);
+    assert_eq!(ticket.get_max_transfers(), 3_u32);
 }

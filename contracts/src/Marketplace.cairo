@@ -18,11 +18,12 @@ pub trait IEventTicketExternal<TContractState> {
         from: ContractAddress,
         to: ContractAddress,
         token_id: u256,
-        sale_price: u256,
+        sale_price: u128,
     );
     fn owner_of(self: @TContractState, token_id: u256) -> ContractAddress;
     fn is_used(self: @TContractState, token_id: u256) -> bool;
-    fn get_royalty(self: @TContractState, sale_price: u256) -> (ContractAddress, u256);
+    fn get_royalty(self: @TContractState, sale_price: u128) -> (ContractAddress, u128);
+    fn is_soulbound(self: @TContractState) -> bool;
 }
 
 #[starknet::interface]
@@ -82,6 +83,10 @@ pub mod Marketplace {
         ) -> u256 {
             let seller = get_caller_address();
             let ticket = IEventTicketExternalDispatcher { contract_address: ticket_contract };
+
+            // Module 6: Soulbound check
+            assert(!ticket.is_soulbound(), 'TICKET_SOULBOUND');
+
             assert(ticket.owner_of(token_id) == seller, 'NOT_OWNER');
             assert(!ticket.is_used(token_id), 'TICKET_USED');
             assert(price > 0, 'PRICE_ZERO');
@@ -125,7 +130,12 @@ pub mod Marketplace {
             let ticket = IEventTicketExternalDispatcher { contract_address: ticket_contract };
             assert(ticket.owner_of(token_id) == seller, 'NOT_OWNER');
             assert(!ticket.is_used(token_id), 'TICKET_USED');
-            let (royalty_recipient, royalty_amount) = ticket.get_royalty(price);
+
+            // Convert price to u128 for EventTicket calls
+            let price_u128: u128 = price.try_into().expect('PRICE_OVERFLOW');
+            let (royalty_recipient, royalty_amount_u128) = ticket.get_royalty(price_u128);
+            let royalty_amount: u256 = royalty_amount_u128.into();
+
             let platform_fee = price * self.platform_fee_bps.read() / 10000;
             let seller_amount = price - royalty_amount - platform_fee;
 
@@ -141,7 +151,7 @@ pub mod Marketplace {
             erc20.transfer_from(buyer, royalty_recipient, royalty_amount);
             erc20.transfer_from(buyer, self.platform_treasury.read(), platform_fee);
             erc20.transfer_from(buyer, seller, seller_amount);
-            ticket.transfer_ticket(seller, buyer, token_id, price);
+            ticket.transfer_ticket(seller, buyer, token_id, price_u128);
         }
     }
 }

@@ -118,6 +118,37 @@ describe("GET /v1/events", () => {
   });
 });
 
+describe("POST /v1/events — acceptedCurrencies", () => {
+  it("returns 201 with custom acceptedCurrencies", async () => {
+    mockPrisma.organizer.findFirst.mockResolvedValue({ id: "org-1", name: "Org" });
+    mockPrisma.event.create.mockResolvedValue({
+      id: "e2",
+      name: "Crypto Concert",
+      contractAddress: "0x0",
+      acceptedCurrencies: ["STRK", "USDC"],
+    });
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/v1/events",
+      payload: { ...validEvent, acceptedCurrencies: ["STRK", "USDC"] },
+      headers: { authorization: `Bearer ${makeOrganizerToken()}` },
+    });
+    expect(res.statusCode).toBe(201);
+    expect(res.json().acceptedCurrencies).toEqual(["STRK", "USDC"]);
+  });
+
+  it("returns 400 with invalid currency", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/v1/events",
+      payload: { ...validEvent, acceptedCurrencies: ["BTC"] },
+      headers: { authorization: `Bearer ${makeOrganizerToken()}` },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+});
+
 describe("GET /v1/events/:id", () => {
   it("returns 404 when event does not exist", async () => {
     mockPrisma.event.findUnique.mockResolvedValue(null);

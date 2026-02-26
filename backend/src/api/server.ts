@@ -6,6 +6,7 @@ import { webhookRoutes } from "./routes/webhooks";
 import { eventRoutes } from "./routes/events";
 import { ticketRoutes } from "./routes/tickets";
 import { marketplaceRoutes } from "./routes/marketplace";
+import { paymentRoutes } from "./routes/payments";
 
 const PORT = Number(process.env.PORT) || 3001;
 const HOST = process.env.HOST || "0.0.0.0";
@@ -39,6 +40,7 @@ async function buildApp() {
   await app.register(eventRoutes);
   await app.register(ticketRoutes);
   await app.register(marketplaceRoutes);
+  await app.register(paymentRoutes);
 
   return app;
 }

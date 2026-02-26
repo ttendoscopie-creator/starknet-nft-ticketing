@@ -9,11 +9,13 @@ use starknet::syscalls::deploy_syscall;
 pub trait ITicketFactory<TContractState> {
     fn create_event(
         ref self: TContractState,
-        max_supply: u256,
-        primary_price: u256,
-        resale_cap_bps: u256,
-        royalty_bps: u256,
+        max_supply: u64,
+        primary_price: u128,
+        resale_cap_bps: u16,
+        royalty_bps: u16,
         marketplace: ContractAddress,
+        soulbound: bool,
+        max_transfers: u32,
     ) -> ContractAddress;
     fn get_event_contract(self: @TContractState, event_id: u256) -> ContractAddress;
     fn get_event_count(self: @TContractState) -> u256;
@@ -58,27 +60,31 @@ pub mod TicketFactory {
     impl TicketFactoryImpl of super::ITicketFactory<ContractState> {
         fn create_event(
             ref self: ContractState,
-            max_supply: u256,
-            primary_price: u256,
-            resale_cap_bps: u256,
-            royalty_bps: u256,
+            max_supply: u64,
+            primary_price: u128,
+            resale_cap_bps: u16,
+            royalty_bps: u16,
             marketplace: ContractAddress,
+            soulbound: bool,
+            max_transfers: u32,
         ) -> ContractAddress {
             let organizer = get_caller_address();
             let event_id = self.event_count.read();
 
             // Build calldata for EventTicket constructor
             let mut calldata: Array<felt252> = array![];
-            calldata.append(max_supply.low.into());
-            calldata.append(max_supply.high.into());
-            calldata.append(primary_price.low.into());
-            calldata.append(primary_price.high.into());
-            calldata.append(resale_cap_bps.low.into());
-            calldata.append(resale_cap_bps.high.into());
-            calldata.append(royalty_bps.low.into());
-            calldata.append(royalty_bps.high.into());
-            calldata.append(organizer.into());
-            calldata.append(marketplace.into());
+            calldata.append(max_supply.into()); // u64 -> 1 felt252
+            calldata.append(primary_price.into()); // u128 -> 1 felt252
+            calldata.append(resale_cap_bps.into()); // u16 -> 1 felt252
+            calldata.append(royalty_bps.into()); // u16 -> 1 felt252
+            calldata.append(organizer.into()); // ContractAddress -> 1 felt252
+            calldata.append(marketplace.into()); // ContractAddress -> 1 felt252
+            calldata.append(if soulbound {
+                1
+            } else {
+                0
+            }); // bool -> 1 felt252
+            calldata.append(max_transfers.into()); // u32 -> 1 felt252
 
             let (contract_address, _) = deploy_syscall(
                 self.ticket_class_hash.read(), event_id.low.into(), calldata.span(), false,

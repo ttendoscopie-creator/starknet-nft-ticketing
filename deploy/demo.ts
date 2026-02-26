@@ -61,11 +61,13 @@ async function main() {
     contractAddress: deployments.factory_address,
     entrypoint: "create_event",
     calldata: [
-      "100", "0",    // max_supply u256
-      "1000000", "0", // primary_price u256
-      "11000", "0",   // resale_cap_bps u256
-      "1000", "0",    // royalty_bps u256
+      "100",        // max_supply: u64
+      "1000000",    // primary_price: u128
+      "11000",      // resale_cap_bps: u16
+      "1000",       // royalty_bps: u16
       deployments.marketplace_address, // marketplace
+      "0",          // soulbound: false
+      "0",          // max_transfers: 0 (unlimited)
     ],
   }]);
   await provider.waitForTransaction(createEventResult.transaction_hash);

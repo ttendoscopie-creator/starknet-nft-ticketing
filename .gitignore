@@ -15,9 +15,6 @@ contracts/.snfoundry_cache/
 .env
 .env.local
 
-# Prisma
-backend/src/db/prisma/migrations/
-
 # OS
 .DS_Store
 

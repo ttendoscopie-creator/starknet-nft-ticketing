@@ -38,7 +38,10 @@ export async function marketplaceRoutes(app: FastifyInstance): Promise<void> {
       const user = (request as unknown as { user: JWTPayload }).user;
       const { ticketId, price } = parseResult.data;
 
-      const ticket = await prisma.ticket.findUnique({ where: { id: ticketId } });
+      const ticket = await prisma.ticket.findUnique({
+        where: { id: ticketId },
+        include: { event: true },
+      });
       if (!ticket) {
         return reply.code(404).send({ error: "Ticket not found" });
       }
@@ -47,6 +50,12 @@ export async function marketplaceRoutes(app: FastifyInstance): Promise<void> {
       }
       if (ticket.status !== "AVAILABLE") {
         return reply.code(400).send({ error: "Ticket not available for listing" });
+      }
+      if (ticket.event.isSoulbound) {
+        return reply.code(400).send({ error: "Soulbound tickets cannot be listed" });
+      }
+      if (ticket.event.maxTransfers > 0 && ticket.transferCount >= ticket.event.maxTransfers) {
+        return reply.code(400).send({ error: "Maximum transfer limit reached" });
       }
 
       const [listing] = await prisma.$transaction([

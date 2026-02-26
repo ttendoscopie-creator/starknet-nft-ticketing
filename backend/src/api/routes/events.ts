@@ -9,9 +9,14 @@ const CreateEventSchema = z.object({
   name: z.string().min(1).max(200),
   eventDate: z.string().datetime(),
   maxSupply: z.number().int().positive().max(100000),
+  primaryPrice: z.number().int().positive().default(1000000),
   resaleCapBps: z.number().int().min(10000).max(50000).default(11000),
   royaltyBps: z.number().int().min(0).max(2000).default(1000),
   metadataBaseUri: z.string().url().optional(),
+  isSoulbound: z.boolean().default(false),
+  maxTransfers: z.number().int().min(0).max(100).default(0),
+  acceptedCurrencies: z.array(z.enum(["STRK", "USDC", "USDT"])).default(["STRK"]),
+  paymentTokenAddress: z.string().optional(),
 });
 
 export async function eventRoutes(app: FastifyInstance): Promise<void> {
@@ -43,9 +48,14 @@ export async function eventRoutes(app: FastifyInstance): Promise<void> {
           name: data.name,
           eventDate: new Date(data.eventDate),
           maxSupply: data.maxSupply,
+          primaryPrice: BigInt(data.primaryPrice),
           resaleCapBps: data.resaleCapBps,
           royaltyBps: data.royaltyBps,
           metadataBaseUri: data.metadataBaseUri,
+          isSoulbound: data.isSoulbound,
+          maxTransfers: data.maxTransfers,
+          acceptedCurrencies: data.acceptedCurrencies,
+          paymentTokenAddress: data.paymentTokenAddress,
         },
       });
 

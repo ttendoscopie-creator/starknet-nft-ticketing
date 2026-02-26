@@ -91,6 +91,8 @@ describe("POST /v1/marketplace/listings", () => {
       id: "t1",
       ownerAddress: "0xother",
       status: "AVAILABLE",
+      transferCount: 0,
+      event: { isSoulbound: false, maxTransfers: 0 },
     });
 
     const res = await app.inject({
@@ -107,6 +109,8 @@ describe("POST /v1/marketplace/listings", () => {
       id: "t1",
       ownerAddress: "0xfan",
       status: "USED",
+      transferCount: 0,
+      event: { isSoulbound: false, maxTransfers: 0 },
     });
 
     const res = await app.inject({
@@ -118,11 +122,51 @@ describe("POST /v1/marketplace/listings", () => {
     expect(res.statusCode).toBe(400);
   });
 
+  it("returns 400 when ticket is soulbound", async () => {
+    mockPrisma.ticket.findUnique.mockResolvedValue({
+      id: "t1",
+      ownerAddress: "0xfan",
+      status: "AVAILABLE",
+      transferCount: 0,
+      event: { isSoulbound: true, maxTransfers: 0 },
+    });
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/v1/marketplace/listings",
+      payload: { ticketId: "550e8400-e29b-41d4-a716-446655440000", price: 100 },
+      headers: { authorization: `Bearer ${fanToken}` },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe("Soulbound tickets cannot be listed");
+  });
+
+  it("returns 400 when transfer limit reached", async () => {
+    mockPrisma.ticket.findUnique.mockResolvedValue({
+      id: "t1",
+      ownerAddress: "0xfan",
+      status: "AVAILABLE",
+      transferCount: 2,
+      event: { isSoulbound: false, maxTransfers: 2 },
+    });
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/v1/marketplace/listings",
+      payload: { ticketId: "550e8400-e29b-41d4-a716-446655440000", price: 100 },
+      headers: { authorization: `Bearer ${fanToken}` },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe("Maximum transfer limit reached");
+  });
+
   it("returns 201 and creates listing via transaction", async () => {
     mockPrisma.ticket.findUnique.mockResolvedValue({
       id: "t1",
       ownerAddress: "0xfan",
       status: "AVAILABLE",
+      transferCount: 0,
+      event: { isSoulbound: false, maxTransfers: 0 },
     });
     mockPrisma.$transaction.mockResolvedValue([
       { id: "l1", ticketId: "t1", sellerAddress: "0xfan", price: 100 },
