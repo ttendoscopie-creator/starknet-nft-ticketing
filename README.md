@@ -1,6 +1,6 @@
 # Starknet NFT Ticketing
 
-A full-stack decentralized event ticketing platform on Starknet. Tickets are ERC-721 NFTs with on-chain ownership, a peer-to-peer marketplace, QR-based gate entry validated in under 50 ms, and gasless transactions via a paymaster.
+A full-stack decentralized event ticketing platform on Starknet. Tickets are ERC-721 NFTs with on-chain ownership, a peer-to-peer marketplace, QR-based gate entry validated in under 50 ms, gasless transactions via a per-organizer paymaster, account recovery with guardian + timelock, and multi-currency crypto payments (STRK/USDC/USDT).
 
 ## Architecture
 
@@ -21,18 +21,18 @@ A full-stack decentralized event ticketing platform on Starknet. Tickets are ERC
 
 | Contract | Description |
 |----------|-------------|
-| **EventTicket** | ERC-721 NFT — mint, transfer, mark_used, staff roles, price caps, royalties |
+| **EventTicket** | ERC-721 NFT — mint, transfer, mark_used, staff roles, price caps, royalties, soulbound mode, transfer limits |
 | **TicketFactory** | Deploys one EventTicket per event |
-| **Marketplace** | P2P resale — list, buy, cancel with CEI anti-reentrancy and 2% platform fee |
-| **Paymaster** | Gas sponsorship — whitelist, per-tx and daily limits, STRK withdraw |
-| **AccountContract** | SNIP-6 abstract account with 24h scoped session keys |
+| **Marketplace** | P2P resale — list, buy, cancel with CEI anti-reentrancy, 2% platform fee, marketplace whitelist |
+| **Paymaster** | Per-organizer gas sponsorship — budgets, daily limits, anti-spam (interval + daily tx count), account sponsoring |
+| **AccountContract** | SNIP-6 abstract account — 24h scoped session keys, guardian + timelock recovery, owner key rotation |
 
 ## Backend (TypeScript)
 
 | Layer | Components |
 |-------|------------|
-| **Routes** | `scan`, `tickets`, `events`, `marketplace`, `webhooks` (Stripe) |
-| **Services** | `qr` (HMAC-SHA256 signing), `starknet` (mint/markUsed with retry), `ticket` (Prisma CRUD) |
+| **Routes** | `scan`, `tickets`, `events`, `marketplace`, `payments` (crypto), `webhooks` (Stripe) |
+| **Services** | `qr` (HMAC-SHA256 signing), `starknet` (mint/markUsed with retry, ERC20 verification), `ticket` (Prisma CRUD) |
 | **Auth** | JWT with roles: `organizer`, `staff`, `fan` |
 | **Queue** | BullMQ workers for async on-chain operations (mint, markUsed) |
 | **DB** | PostgreSQL (Prisma) + Redis (ticket cache, atomic double-spend prevention) |
@@ -62,11 +62,11 @@ Organizer ──< Event ──< Ticket ──< ScanLog
 ```
 
 - **Organizer** — treasury address, paymaster address, API key
-- **Event** — contract address, max supply, resale cap, royalty bps
+- **Event** — contract address, max supply, resale cap, royalty bps, accepted currencies, payment token address
 - **Ticket** — token ID, owner, status (`AVAILABLE` / `LISTED` / `USED` / `CANCELLED`)
 - **Listing** — seller, price, on-chain listing ID
 - **ScanLog** — gate ID, offline flag, sync status
-- **PendingMint** — Stripe payment intent, buyer wallet, tx hash
+- **PendingMint** — Stripe payment intent or crypto tx hash, buyer wallet, payment amount/currency
 
 ## API Endpoints
 
@@ -76,11 +76,13 @@ Organizer ──< Event ──< Ticket ──< ScanLog
 | `POST` | `/v1/webhooks/stripe` | — | Stripe payment webhook |
 | `POST` | `/v1/events` | organizer | Create event + deploy contract |
 | `GET` | `/v1/events` | organizer | List events |
+| `GET` | `/v1/events/:id` | any | Get event details |
 | `GET` | `/v1/tickets` | fan | User's tickets |
 | `GET` | `/v1/tickets/:id/qr` | fan | Generate signed QR payload |
 | `GET` | `/v1/marketplace/listings` | public | Active listings |
 | `POST` | `/v1/marketplace/listings` | fan | Create listing |
 | `DELETE` | `/v1/marketplace/listings/:id` | fan | Cancel listing |
+| `POST` | `/v1/payments/verify-crypto` | fan | Verify on-chain ERC20 payment (STRK/USDC/USDT) |
 
 ## Security
 
@@ -90,6 +92,8 @@ Organizer ──< Event ──< Ticket ──< ScanLog
 - CEI pattern in Marketplace (anti-reentrancy)
 - Price cap enforced on-chain (`resale_cap_bps`)
 - Session keys scoped and time-limited (max 24h)
+- Account recovery with guardian + 24h timelock
+- Session keys auto-revoked on recovery execution
 
 ## Getting Started
 
@@ -148,11 +152,11 @@ npx tsx demo.ts
 ### Run Tests
 
 ```bash
-# Cairo contracts (41 tests)
+# Cairo contracts (71 tests)
 cd contracts
 snforge test
 
-# Backend (94 tests)
+# Backend (107 tests)
 cd backend
 npm test
 
@@ -168,16 +172,16 @@ GitHub Actions runs 3 parallel jobs on every push/PR to `main`:
 
 | Job | Steps | Duration |
 |-----|-------|----------|
-| **Contracts** | `scarb fmt --check` -> `scarb build` -> `snforge test` -> gas report | ~1m40s |
-| **Backend** | `npm ci` -> `prisma generate` -> `tsc --noEmit` -> `vitest` | ~19s |
-| **Frontend** | `npm ci` -> `tsc --noEmit` -> `next build` | ~43s |
+| **Contracts** | `scarb fmt --check` -> `scarb build` -> `snforge test` -> gas report | ~1m45s |
+| **Backend** | `npm ci` -> `prisma generate` -> `tsc --noEmit` -> `vitest` (107 tests) | ~25s |
+| **Frontend** | `npm ci` -> `tsc --noEmit` -> `next build` | ~48s |
 
 ## Main Flow
 
 ```
 Fan signs in (Web3Auth social login)
-  -> Pays via Stripe
-  -> Backend creates Ticket (Prisma)
+  -> Pays via Stripe or crypto (STRK/USDC/USDT)
+  -> Backend creates PendingMint (Prisma)
   -> BullMQ worker mints NFT on-chain
   -> Fan sees ticket + dynamic QR (HMAC-SHA256, 30s TTL)
   -> Staff scans QR at gate
@@ -196,7 +200,7 @@ Fan signs in (Web3Auth social login)
 | Queue | BullMQ 5 |
 | Frontend | Next.js 14, React 18, Tailwind CSS 3 |
 | Auth | Web3Auth v8, JWT |
-| Payments | Stripe |
+| Payments | Stripe, STRK/USDC/USDT (on-chain ERC20) |
 | Blockchain | Starknet (starknet.js v6) |
 | Testing | snforge (Cairo), Vitest (TypeScript) |
 | CI/CD | GitHub Actions |
@@ -207,20 +211,21 @@ Fan signs in (Web3Auth social login)
 starknet-nft-ticketing/
 ├── contracts/              # Cairo smart contracts
 │   ├── src/                # Contract sources (6 contracts)
-│   └── tests/              # 41 snforge tests
+│   └── tests/              # 71 snforge tests
 ├── backend/                # Fastify API
 │   ├── src/
 │   │   ├── api/            # Routes + middleware
 │   │   ├── services/       # Business logic
 │   │   ├── queue/          # BullMQ job definitions
 │   │   ├── indexer/        # Starknet event indexer
-│   │   └── db/             # Prisma schema + Redis
-│   └── vitest.config.ts    # 94 Vitest tests
+│   │   └── db/             # Prisma schema + migrations + Redis
+│   └── vitest.config.ts    # 107 Vitest tests
 ├── frontend/               # Next.js app
 │   ├── app/                # Pages (App Router)
 │   └── components/         # React components
 ├── deploy/
-│   ├── deploy.py           # Contract deployment script
+│   ├── deploy.py           # Contract deployment script (Python)
+│   ├── deploy.ts           # Contract deployment script (TypeScript)
 │   └── demo.ts             # Full lifecycle demo
 ├── docker-compose.yml      # PostgreSQL + Redis
 └── .github/workflows/      # CI pipeline
