@@ -1,9 +1,10 @@
-import { RpcProvider, Account, Contract, CallData, num } from "starknet";
+import { RpcProvider, Account, Contract, CallData, num, hash } from "starknet";
 
 const STARKNET_RPC_URL =
   process.env.STARKNET_RPC_URL || "https://starknet-sepolia.public.blastapi.io";
 const DEPLOYER_PRIVATE_KEY = process.env.DEPLOYER_PRIVATE_KEY!;
 const DEPLOYER_ADDRESS = process.env.DEPLOYER_ADDRESS!;
+const FACTORY_ADDRESS = process.env.FACTORY_ADDRESS || "";
 
 const provider = new RpcProvider({ nodeUrl: STARKNET_RPC_URL });
 const account = new Account(provider, DEPLOYER_ADDRESS, DEPLOYER_PRIVATE_KEY);
@@ -25,6 +26,54 @@ async function withRetry<T>(fn: () => Promise<T>): Promise<T> {
     }
   }
   throw lastError;
+}
+
+export interface DeployEventParams {
+  maxSupply: number;
+  primaryPrice: bigint;
+  resaleCapBps: number;
+  royaltyBps: number;
+  marketplaceAddress: string;
+  isSoulbound: boolean;
+  maxTransfers: number;
+}
+
+export async function deployEventContract(params: DeployEventParams): Promise<string> {
+  if (!FACTORY_ADDRESS) {
+    throw new Error("FACTORY_ADDRESS not configured");
+  }
+
+  return withRetry(async () => {
+    const result = await account.execute({
+      contractAddress: FACTORY_ADDRESS,
+      entrypoint: "create_event",
+      calldata: CallData.compile({
+        max_supply: params.maxSupply,
+        primary_price: params.primaryPrice,
+        resale_cap_bps: params.resaleCapBps,
+        royalty_bps: params.royaltyBps,
+        marketplace: params.marketplaceAddress,
+        soulbound: params.isSoulbound ? 1 : 0,
+        max_transfers: params.maxTransfers,
+      }),
+    });
+
+    const receipt = await provider.waitForTransaction(result.transaction_hash);
+
+    // Parse EventCreated event from receipt to get deployed contract address
+    const eventCreatedSelector = hash.getSelectorFromName("EventCreated");
+    const events = (receipt as any).events ?? [];
+    for (const evt of events) {
+      if (evt.keys?.length > 0 && num.toHex(evt.keys[0]) === num.toHex(eventCreatedSelector)) {
+        // EventCreated { event_id: u256, contract_address: ContractAddress, organizer: ContractAddress }
+        // data: [event_id_low, event_id_high, contract_address, organizer]
+        const contractAddress = num.toHex(evt.data[2]);
+        return contractAddress;
+      }
+    }
+
+    throw new Error("EventCreated event not found in transaction receipt");
+  });
 }
 
 export async function mintTicket(

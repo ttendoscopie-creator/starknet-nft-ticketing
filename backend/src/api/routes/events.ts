@@ -2,8 +2,12 @@ import { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { PrismaClient } from "@prisma/client";
 import { authMiddleware, organizerOnly, JWTPayload } from "../middleware/auth";
+import { deployEventContract } from "../../services/starknet.service";
+import { logger } from "../../config/logger";
 
 const prisma = new PrismaClient();
+
+const MARKETPLACE_ADDRESS = process.env.MARKETPLACE_ADDRESS || "";
 
 const CreateEventSchema = z.object({
   name: z.string().min(1).max(200),
@@ -41,10 +45,32 @@ export async function eventRoutes(app: FastifyInstance): Promise<void> {
         return reply.code(404).send({ error: "Organizer not found" });
       }
 
+      if (!MARKETPLACE_ADDRESS) {
+        return reply.code(500).send({ error: "MARKETPLACE_ADDRESS not configured" });
+      }
+
+      // Deploy contract on-chain first via TicketFactory
+      let contractAddress: string;
+      try {
+        contractAddress = await deployEventContract({
+          maxSupply: data.maxSupply,
+          primaryPrice: BigInt(data.primaryPrice),
+          resaleCapBps: data.resaleCapBps,
+          royaltyBps: data.royaltyBps,
+          marketplaceAddress: MARKETPLACE_ADDRESS,
+          isSoulbound: data.isSoulbound,
+          maxTransfers: data.maxTransfers,
+        });
+        logger.info({ contractAddress }, "Event contract deployed on-chain");
+      } catch (err) {
+        logger.error({ err }, "Failed to deploy event contract on-chain");
+        return reply.code(500).send({ error: "On-chain contract deployment failed" });
+      }
+
       const event = await prisma.event.create({
         data: {
           organizerId: organizer.id,
-          contractAddress: "0x0", // Updated after on-chain deployment
+          contractAddress,
           name: data.name,
           eventDate: new Date(data.eventDate),
           maxSupply: data.maxSupply,

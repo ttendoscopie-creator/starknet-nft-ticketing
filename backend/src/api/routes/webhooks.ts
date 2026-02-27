@@ -47,6 +47,11 @@ export async function webhookRoutes(app: FastifyInstance): Promise<void> {
         return reply.code(200).send({ received: true });
       }
 
+      if (!metadata.buyer_wallet_address) {
+        app.log.warn({ sessionId: session.id }, "Missing buyer_wallet_address in Stripe session, cannot mint");
+        return reply.code(200).send({ received: true, warning: "No wallet address provided, ticket not minted" });
+      }
+
       try {
         // Idempotent: skip if this payment intent was already processed
         const existing = await prisma.pendingMint.findUnique({

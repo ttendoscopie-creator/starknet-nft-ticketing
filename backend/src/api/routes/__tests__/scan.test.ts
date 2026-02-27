@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeAll, beforeEach } from "vitest";
 import Fastify from "fastify";
 import type { FastifyInstance } from "fastify";
+import jwt from "jsonwebtoken";
 
 // Mock dependencies before importing the route module
 const {
@@ -46,6 +47,16 @@ vi.mock("bullmq", () => ({
 
 import { scanRoutes } from "../scan";
 
+const JWT_SECRET = process.env.JWT_SECRET || "test-secret-that-is-at-least-32-chars-long!!";
+
+function makeStaffToken(): string {
+  return jwt.sign(
+    { userId: "staff-1", walletAddress: "0xstaff", role: "staff" },
+    JWT_SECRET,
+    { expiresIn: "1h" }
+  );
+}
+
 let app: FastifyInstance;
 
 beforeAll(async () => {
@@ -58,6 +69,8 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
+const staffHeaders = { authorization: `Bearer ${makeStaffToken()}` };
+
 const validBody = {
   ticket_id: "550e8400-e29b-41d4-a716-446655440000",
   signature: "a".repeat(64),
@@ -66,8 +79,33 @@ const validBody = {
 };
 
 describe("POST /v1/scan/validate", () => {
+  it("returns 401 without auth token", async () => {
+    const res = await app.inject({ method: "POST", url: "/v1/scan/validate", payload: validBody });
+    expect(res.statusCode).toBe(401);
+  });
+
+  it("returns 403 when user role is fan", async () => {
+    const fanToken = jwt.sign(
+      { userId: "fan-1", walletAddress: "0xfan", role: "fan" },
+      JWT_SECRET,
+      { expiresIn: "1h" }
+    );
+    const res = await app.inject({
+      method: "POST",
+      url: "/v1/scan/validate",
+      payload: validBody,
+      headers: { authorization: `Bearer ${fanToken}` },
+    });
+    expect(res.statusCode).toBe(403);
+  });
+
   it("returns 400 INVALID_REQUEST when body is empty", async () => {
-    const res = await app.inject({ method: "POST", url: "/v1/scan/validate", payload: {} });
+    const res = await app.inject({
+      method: "POST",
+      url: "/v1/scan/validate",
+      payload: {},
+      headers: staffHeaders,
+    });
     expect(res.statusCode).toBe(400);
     expect(res.json().reason).toBe("INVALID_REQUEST");
   });
@@ -77,6 +115,7 @@ describe("POST /v1/scan/validate", () => {
       method: "POST",
       url: "/v1/scan/validate",
       payload: { ...validBody, ticket_id: "not-a-uuid" },
+      headers: staffHeaders,
     });
     expect(res.statusCode).toBe(400);
     expect(res.json().reason).toBe("INVALID_REQUEST");
@@ -89,6 +128,7 @@ describe("POST /v1/scan/validate", () => {
       method: "POST",
       url: "/v1/scan/validate",
       payload: validBody,
+      headers: staffHeaders,
     });
     expect(res.json().reason).toBe("QR_EXPIRED");
     expect(res.json().valid).toBe(false);
@@ -102,6 +142,7 @@ describe("POST /v1/scan/validate", () => {
       method: "POST",
       url: "/v1/scan/validate",
       payload: validBody,
+      headers: staffHeaders,
     });
     expect(res.json().reason).toBe("INVALID_SIGNATURE");
   });
@@ -116,6 +157,7 @@ describe("POST /v1/scan/validate", () => {
       method: "POST",
       url: "/v1/scan/validate",
       payload: validBody,
+      headers: staffHeaders,
     });
     expect(res.json().reason).toBe("TICKET_NOT_FOUND");
   });
@@ -139,6 +181,7 @@ describe("POST /v1/scan/validate", () => {
       method: "POST",
       url: "/v1/scan/validate",
       payload: validBody,
+      headers: staffHeaders,
     });
     expect(res.json().valid).toBe(true);
     expect(mockGetTicketById).toHaveBeenCalledWith(validBody.ticket_id);
@@ -157,6 +200,7 @@ describe("POST /v1/scan/validate", () => {
       method: "POST",
       url: "/v1/scan/validate",
       payload: validBody,
+      headers: staffHeaders,
     });
     expect(res.json().reason).toBe("ALREADY_USED");
   });
@@ -178,6 +222,7 @@ describe("POST /v1/scan/validate", () => {
       method: "POST",
       url: "/v1/scan/validate",
       payload: validBody,
+      headers: staffHeaders,
     });
     const body = res.json();
     expect(body.valid).toBe(true);
@@ -201,6 +246,7 @@ describe("POST /v1/scan/validate", () => {
       method: "POST",
       url: "/v1/scan/validate",
       payload: validBody,
+      headers: staffHeaders,
     });
 
     expect(mockQueueAdd).toHaveBeenCalledWith("markUsed", {

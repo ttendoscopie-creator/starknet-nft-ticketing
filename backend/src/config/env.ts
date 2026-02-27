@@ -15,6 +15,8 @@ export function validateEnv(): void {
   requireEnv("QR_SIGNING_PRIVATE_KEY", 32);
   requireEnv("DEPLOYER_PRIVATE_KEY");
   requireEnv("DEPLOYER_ADDRESS");
+  requireEnv("FACTORY_ADDRESS");
+  requireEnv("MARKETPLACE_ADDRESS");
   requireEnv("DATABASE_URL");
   requireEnv("REDIS_URL");
   requireEnv("FRONTEND_URL");

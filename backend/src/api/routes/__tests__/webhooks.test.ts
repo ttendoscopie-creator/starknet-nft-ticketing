@@ -104,6 +104,32 @@ describe("POST /v1/webhooks/stripe", () => {
     expect(mockQueueAdd).not.toHaveBeenCalled();
   });
 
+  it("returns 200 and skips when buyer_wallet_address is missing", async () => {
+    mockConstructEvent.mockReturnValue({
+      type: "checkout.session.completed",
+      data: {
+        object: {
+          id: "cs_test",
+          payment_intent: "pi_no_wallet",
+          metadata: { event_id: "e1", buyer_email: "fan@test.com" },
+        },
+      },
+    });
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/v1/webhooks/stripe",
+      payload: Buffer.from("{}"),
+      headers: {
+        "content-type": "application/json",
+        "stripe-signature": "t=123,v1=abc",
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().warning).toContain("No wallet address");
+    expect(mockQueueAdd).not.toHaveBeenCalled();
+  });
+
   it("returns 200 and skips duplicate payment intent", async () => {
     mockConstructEvent.mockReturnValue({
       type: "checkout.session.completed",
@@ -111,7 +137,7 @@ describe("POST /v1/webhooks/stripe", () => {
         object: {
           id: "cs_test",
           payment_intent: "pi_existing",
-          metadata: { event_id: "e1", buyer_email: "fan@test.com" },
+          metadata: { event_id: "e1", buyer_email: "fan@test.com", buyer_wallet_address: "0xwallet" },
         },
       },
     });

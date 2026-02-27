@@ -33,6 +33,18 @@ const mintWorker = new Worker<MintJobData>(
       throw new Error(`Event ${eventId} not found`);
     }
 
+    if (event.contractAddress === "0x0") {
+      throw new Error(`Event ${eventId} contract not deployed yet`);
+    }
+
+    if (!buyerWalletAddress || buyerWalletAddress === "0x0") {
+      await prisma.pendingMint.update({
+        where: { id: pendingMintId },
+        data: { status: "FAILED" },
+      });
+      throw new Error("Cannot mint: buyer wallet address is required");
+    }
+
     if (event._count.tickets >= event.maxSupply) {
       await prisma.pendingMint.update({
         where: { id: pendingMintId },
@@ -42,7 +54,7 @@ const mintWorker = new Worker<MintJobData>(
     }
 
     const tokenId = BigInt(event._count.tickets + 1);
-    const walletAddress = buyerWalletAddress || "0x0"; // Placeholder if no wallet yet
+    const walletAddress = buyerWalletAddress;
 
     try {
       // Mint on-chain

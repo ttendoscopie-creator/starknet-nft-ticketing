@@ -3,6 +3,11 @@ import Fastify from "fastify";
 import type { FastifyInstance } from "fastify";
 import { makeOrganizerToken, makeToken } from "../../../__tests__/helpers";
 
+// Set env vars before module imports
+vi.hoisted(() => {
+  process.env.MARKETPLACE_ADDRESS = "0x1234567890abcdef";
+});
+
 // Mock Prisma
 const { mockPrisma } = vi.hoisted(() => ({
   mockPrisma: {
@@ -18,6 +23,20 @@ const { mockPrisma } = vi.hoisted(() => ({
 
 vi.mock("@prisma/client", () => ({
   PrismaClient: vi.fn(() => mockPrisma),
+}));
+
+// Mock starknet service
+const { mockDeployEventContract } = vi.hoisted(() => ({
+  mockDeployEventContract: vi.fn(),
+}));
+
+vi.mock("../../../services/starknet.service", () => ({
+  deployEventContract: (...args: any[]) => mockDeployEventContract(...args),
+}));
+
+// Mock logger
+vi.mock("../../../config/logger", () => ({
+  logger: { info: vi.fn(), error: vi.fn(), warn: vi.fn(), debug: vi.fn() },
 }));
 
 import { eventRoutes } from "../events";
@@ -84,10 +103,11 @@ describe("POST /v1/events", () => {
 
   it("returns 201 with created event on valid input", async () => {
     mockPrisma.organizer.findFirst.mockResolvedValue({ id: "org-1", name: "Org" });
+    mockDeployEventContract.mockResolvedValue("0xdeployed_contract");
     mockPrisma.event.create.mockResolvedValue({
       id: "e1",
       name: "Concert Paris",
-      contractAddress: "0x0",
+      contractAddress: "0xdeployed_contract",
     });
 
     const res = await app.inject({
@@ -97,7 +117,23 @@ describe("POST /v1/events", () => {
       headers: { authorization: `Bearer ${makeOrganizerToken()}` },
     });
     expect(res.statusCode).toBe(201);
-    expect(res.json().contractAddress).toBe("0x0");
+    expect(res.json().contractAddress).toBe("0xdeployed_contract");
+    expect(mockDeployEventContract).toHaveBeenCalled();
+  });
+
+  it("returns 500 when on-chain deployment fails", async () => {
+    mockPrisma.organizer.findFirst.mockResolvedValue({ id: "org-1", name: "Org" });
+    mockDeployEventContract.mockRejectedValue(new Error("RPC timeout"));
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/v1/events",
+      payload: validEvent,
+      headers: { authorization: `Bearer ${makeOrganizerToken()}` },
+    });
+    expect(res.statusCode).toBe(500);
+    expect(res.json().error).toBe("On-chain contract deployment failed");
+    expect(mockPrisma.event.create).not.toHaveBeenCalled();
   });
 });
 
@@ -126,10 +162,11 @@ describe("GET /v1/events", () => {
 describe("POST /v1/events — acceptedCurrencies", () => {
   it("returns 201 with custom acceptedCurrencies", async () => {
     mockPrisma.organizer.findFirst.mockResolvedValue({ id: "org-1", name: "Org" });
+    mockDeployEventContract.mockResolvedValue("0xdeployed_contract");
     mockPrisma.event.create.mockResolvedValue({
       id: "e2",
       name: "Crypto Concert",
-      contractAddress: "0x0",
+      contractAddress: "0xdeployed_contract",
       acceptedCurrencies: ["STRK", "USDC"],
     });
 

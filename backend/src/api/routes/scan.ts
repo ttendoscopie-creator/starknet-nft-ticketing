@@ -5,6 +5,7 @@ import { getTicketCache, markTicketUsedAtomic } from "../../db/redis";
 import { verifyQRSignature, isTimestampValid } from "../../services/qr.service";
 import { Queue } from "bullmq";
 import { bullmqConnection } from "../../db/redis";
+import { authMiddleware, staffOnly } from "../middleware/auth";
 
 const markUsedQueue = new Queue("markUsed", { connection: bullmqConnection });
 
@@ -16,7 +17,7 @@ const ScanValidateSchema = z.object({
 });
 
 export async function scanRoutes(app: FastifyInstance): Promise<void> {
-  app.post("/v1/scan/validate", async (request, reply) => {
+  app.post("/v1/scan/validate", { preHandler: [authMiddleware, staffOnly] }, async (request, reply) => {
     const parseResult = ScanValidateSchema.safeParse(request.body);
     if (!parseResult.success) {
       return reply

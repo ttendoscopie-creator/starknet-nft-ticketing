@@ -1,4 +1,4 @@
-import { RpcProvider, num, events } from "starknet";
+import { RpcProvider, num, hash } from "starknet";
 import { PrismaClient } from "@prisma/client";
 import { setTicketCache, redis } from "../db/redis";
 import { logger } from "../config/logger";
@@ -11,13 +11,19 @@ const provider = new RpcProvider({ nodeUrl: STARKNET_RPC_URL });
 const POLL_INTERVAL_MS = 2000;
 const FACTORY_ADDRESS = process.env.FACTORY_ADDRESS || "";
 
-// Event selectors (keccak256 of event name)
+// Compute proper sn_keccak selectors from event names
 const EVENT_SELECTORS = {
-  TicketMinted: "0x" + BigInt("0x00d0b4d4e0be0d8c2d5d8fa11f4e8b0b00d0b4d4").toString(16),
-  TicketTransferred: "0x" + BigInt("0x00d0b4d4e0be0d8c2d5d8fa11f4e8b0b00d0b4d5").toString(16),
-  TicketUsed: "0x" + BigInt("0x00d0b4d4e0be0d8c2d5d8fa11f4e8b0b00d0b4d6").toString(16),
-  EventCreated: "0x" + BigInt("0x00d0b4d4e0be0d8c2d5d8fa11f4e8b0b00d0b4d7").toString(16),
+  TicketMinted: hash.getSelectorFromName("TicketMinted"),
+  TicketTransferred: hash.getSelectorFromName("TicketTransferred"),
+  TicketUsed: hash.getSelectorFromName("TicketUsed"),
+  EventCreated: hash.getSelectorFromName("EventCreated"),
 };
+
+// Reverse lookup: selector -> handler name
+const SELECTOR_TO_EVENT = new Map<string, string>();
+for (const [name, selector] of Object.entries(EVENT_SELECTORS)) {
+  SELECTOR_TO_EVENT.set(num.toHex(selector), name);
+}
 
 interface IndexerState {
   lastIndexedBlock: number;
@@ -139,14 +145,26 @@ async function processTicketUsed(
 
 async function processEventCreated(eventData: string[]): Promise<void> {
   const eventIdLow = BigInt(eventData[0]);
-  const eventIdHigh = BigInt(eventData[1]);
   const contractAddress = num.toHex(eventData[2]);
   const organizer = num.toHex(eventData[3]);
 
-  logger.info(
-    { eventId: eventIdLow.toString(), contractAddress, organizer },
-    "Indexed EventCreated"
-  );
+  // Update the event record with the deployed contract address
+  try {
+    await prisma.event.updateMany({
+      where: {
+        contractAddress: "0x0",
+        organizer: { treasuryAddress: organizer },
+      },
+      data: { contractAddress },
+    });
+
+    logger.info(
+      { eventId: eventIdLow.toString(), contractAddress, organizer },
+      "Indexed EventCreated — updated contract address"
+    );
+  } catch (err) {
+    logger.error({ err, contractAddress }, "Failed to process EventCreated");
+  }
 }
 
 async function pollEvents(): Promise<void> {
@@ -171,7 +189,9 @@ async function pollEvents(): Promise<void> {
     const eventContracts = await prisma.event.findMany({
       select: { contractAddress: true },
     });
-    const addresses = eventContracts.map((e) => e.contractAddress);
+    const addresses = eventContracts
+      .map((e) => e.contractAddress)
+      .filter((addr) => addr !== "0x0");
     if (FACTORY_ADDRESS) addresses.push(FACTORY_ADDRESS);
 
     if (addresses.length === 0) {
@@ -191,11 +211,28 @@ async function pollEvents(): Promise<void> {
 
         for (const evt of eventsResult.events) {
           const data = evt.data;
-          // Route to handler based on event key
-          // In production, match against computed selectors
-          if (data.length >= 3) {
-            // Heuristic: process based on data shape
-            logger.debug({ address, keys: evt.keys, data }, "Event received");
+          const eventKey = evt.keys.length > 0 ? num.toHex(evt.keys[0]) : null;
+          if (!eventKey) continue;
+
+          const eventName = SELECTOR_TO_EVENT.get(eventKey);
+          if (!eventName) {
+            logger.debug({ address, eventKey }, "Unknown event selector, skipping");
+            continue;
+          }
+
+          switch (eventName) {
+            case "TicketMinted":
+              await processTicketMinted(address, data);
+              break;
+            case "TicketTransferred":
+              await processTicketTransferred(address, data);
+              break;
+            case "TicketUsed":
+              await processTicketUsed(address, data);
+              break;
+            case "EventCreated":
+              await processEventCreated(data);
+              break;
           }
         }
       } catch (err) {
@@ -211,7 +248,14 @@ async function pollEvents(): Promise<void> {
 }
 
 async function startIndexer(): Promise<void> {
-  logger.info("Starting Starknet indexer (polling mode)");
+  logger.info(
+    {
+      selectors: Object.fromEntries(
+        Object.entries(EVENT_SELECTORS).map(([k, v]) => [k, num.toHex(v)])
+      ),
+    },
+    "Starting Starknet indexer (polling mode)"
+  );
 
   // Continuous polling loop
   const poll = async () => {
