@@ -40,8 +40,9 @@ La plateforme couvre **l'integralite de la chaine de valeur** : creation d'evene
 Le spectateur se connecte avec son **compte Google, Apple, ou email**. Pas besoin de comprendre la blockchain ni de posseder un portefeuille crypto au prealable. La plateforme utilise **Web3Auth**, une technologie qui cree automatiquement un portefeuille blockchain invisible a partir de la connexion sociale. L'experience est identique a celle de n'importe quel site web moderne.
 
 **Etape 2 -- Achat du billet**
-Deux options de paiement :
+Trois options de paiement :
 - **Carte bancaire** via Stripe (Visa, Mastercard, etc.) -- identique a un achat en ligne classique.
+- **Virement bancaire instantane** via Weero -- paiement par virement SEPA instantane, sans carte bancaire. Ideal pour les montants eleves ou les utilisateurs qui preferent payer directement depuis leur compte bancaire.
 - **Crypto-monnaie** -- paiement en STRK (token natif Starknet), USDC ou USDT (stablecoins indexes sur le dollar). La plateforme verifie automatiquement le paiement sur la blockchain.
 
 **Etape 3 -- Reception du billet NFT**
@@ -251,7 +252,7 @@ La plateforme est composee de **6 contrats intelligents** sur la blockchain et d
 | File d'attente | BullMQ | Standard industriel |
 | Interface | Next.js + React | Standard industriel |
 | Authentification | Web3Auth + JWT | Standard industriel |
-| Paiement | Stripe + crypto (STRK/USDC/USDT) | Standard industriel |
+| Paiement | Stripe + Weero + crypto (STRK/USDC/USDT) | Standard industriel |
 
 ---
 
