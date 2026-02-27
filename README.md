@@ -1,6 +1,6 @@
 # Starknet NFT Ticketing
 
-A full-stack decentralized event ticketing platform on Starknet. Tickets are ERC-721 NFTs with on-chain ownership, a peer-to-peer marketplace, QR-based gate entry validated in under 50 ms, gasless transactions via a per-organizer paymaster, account recovery with guardian + timelock, and multi-currency crypto payments (STRK/USDC/USDT).
+A full-stack decentralized event ticketing platform on Starknet. Tickets are ERC-721 NFTs with on-chain ownership, a peer-to-peer marketplace, QR-based gate entry validated in under 50 ms, gasless transactions via a per-organizer paymaster, account recovery with guardian + timelock, multi-currency crypto payments (STRK/USDC/USDT), and a **Digital Twin Bridge** that automatically mints NFTs from external ticketing providers (Eventbrite, Weezevent, etc.).
 
 ## Architecture
 
@@ -17,6 +17,41 @@ A full-stack decentralized event ticketing platform on Starknet. Tickets are ERC
                     └─────────────┘
 ```
 
+## Digital Twin Bridge
+
+Connects external (classical) ticketing providers to Starknet NFTs. Each off-chain ticket sale triggers an automatic NFT mint. Buyers claim their NFT by logging in with the same email.
+
+```
+External Provider ──webhook──▶ POST /v1/bridge/webhook (HMAC-SHA256)
+                                    │
+                                    ▼
+                              BridgedTicket (PENDING)
+                                    │
+                              bridgeMint queue (BullMQ)
+                                    │
+                                    ▼
+                          mintTicket() → vault address
+                              BridgedTicket (MINTED)
+                                    │
+                   User logs in (Web3Auth, email match)
+                                    │
+                              POST /v1/bridge/claim (JWT)
+                                    │
+                              bridgeClaim queue (BullMQ)
+                                    │
+                                    ▼
+                        transferTicket() → user wallet
+                              BridgedTicket (CLAIMED)
+```
+
+**Key design decisions:**
+- **Vault pattern** — NFTs mint to the deployer address (vault), then transfer to the user on claim, bridging the gap between email-based ticketing and wallet-based ownership
+- **HMAC-SHA256 webhook auth** — each organizer has an API key; the external provider signs payloads with `sha256=<hex>`, verified with `crypto.timingSafeEqual`
+- **Idempotency** — duplicate webhooks are safe via `@@unique([externalTicketId, organizerId])` compound key
+- **Marketplace whitelist** — `transfer_ticket` requires the caller to be in `allowed_marketplaces`; the bridge worker calls `add_marketplace(DEPLOYER_ADDRESS)` once per event contract (cached in Redis for 24h)
+- **Soulbound guard** — soulbound events are rejected at both webhook and worker level (soulbound NFTs cannot be transferred)
+- **Status machine** — `PENDING → MINTED → CLAIMED` (or `FAILED` with `errorMessage`)
+
 ## Smart Contracts (Cairo)
 
 | Contract | Description |
@@ -31,10 +66,10 @@ A full-stack decentralized event ticketing platform on Starknet. Tickets are ERC
 
 | Layer | Components |
 |-------|------------|
-| **Routes** | `scan`, `tickets`, `events`, `marketplace`, `payments` (crypto), `webhooks` (Stripe) |
-| **Services** | `qr` (HMAC-SHA256 signing), `starknet` (mint/markUsed with circuit breaker + retry, ERC20 verification), `ticket` (Prisma CRUD) |
+| **Routes** | `scan`, `tickets`, `events`, `marketplace`, `payments` (crypto), `webhooks` (Stripe), `bridge` (Digital Twin) |
+| **Services** | `qr` (HMAC-SHA256 signing), `starknet` (mint/transfer/markUsed with circuit breaker + retry, ERC20 verification), `bridge` (HMAC webhook verification), `ticket` (Prisma CRUD) |
 | **Auth** | JWT with roles: `organizer`, `staff`, `fan` — typed via Fastify module augmentation |
-| **Queue** | BullMQ workers for async on-chain operations (mint, markUsed) |
+| **Queue** | BullMQ workers for async on-chain operations (mint, markUsed, bridgeMint, bridgeClaim) |
 | **DB** | PostgreSQL (Prisma singleton) + Redis (ticket cache, atomic double-spend prevention) |
 | **Indexer** | Starknet event indexer with adaptive backoff |
 | **Hardening** | Helmet security headers, Zod UUID validation on all params, graceful shutdown, circuit breaker for RPC |
@@ -58,16 +93,18 @@ A full-stack decentralized event ticketing platform on Starknet. Tickets are ERC
 ```
 Organizer ──< Event ──< Ticket ──< ScanLog
                 │          │
-                │          └──< Listing
+                │          ├──< Listing
+                │          └──? BridgedTicket
                 └──< PendingMint
 ```
 
-- **Organizer** — treasury address, paymaster address, API key
+- **Organizer** — treasury address, paymaster address, API key (used for bridge HMAC)
 - **Event** — contract address, max supply, resale cap, royalty bps, accepted currencies, payment token address
 - **Ticket** — token ID, owner, status (`AVAILABLE` / `LISTED` / `USED` / `CANCELLED`)
 - **Listing** — seller, price, on-chain listing ID
 - **ScanLog** — gate ID, offline flag, sync status
 - **PendingMint** — Stripe payment intent or crypto tx hash, buyer wallet, payment amount/currency
+- **BridgedTicket** — external ticket ID, owner email, status (`PENDING` / `MINTED` / `CLAIMED` / `FAILED`), vault address, mint/claim tx hashes
 
 ## API Endpoints
 
@@ -88,6 +125,10 @@ Organizer ──< Event ──< Ticket ──< ScanLog
 | `POST` | `/v1/marketplace/listings` | fan | Create listing |
 | `DELETE` | `/v1/marketplace/listings/:id` | fan | Cancel listing |
 | `POST` | `/v1/payments/verify-crypto` | fan | Verify on-chain ERC20 payment (STRK/USDC/USDT) |
+| `POST` | `/v1/bridge/webhook` | HMAC | External ticketing webhook (auto-mints NFT) |
+| `POST` | `/v1/bridge/claim` | fan | Claim bridged tickets (transfer from vault to wallet) |
+| `GET` | `/v1/bridge/status/:id` | fan | Check bridged ticket status |
+| `GET` | `/v1/bridge/tickets` | fan | List user's bridged tickets |
 
 ## Security
 
@@ -110,6 +151,8 @@ Organizer ──< Event ──< Ticket ──< ScanLog
 - Transient-only retry (network/timeout errors retried, contract reverts fail fast)
 - Health check with 5s timeout on DB + Redis
 - Strict env validation (hex format, URL format, Stripe key prefix)
+- Bridge webhook HMAC-SHA256 signature verification with `crypto.timingSafeEqual`
+- Bridge rate limiting: 100 req/min (webhook), 10 req/min (claim)
 
 **Frontend**
 - Content Security Policy (Web3Auth + RPC domains whitelisted)
@@ -177,7 +220,7 @@ npx tsx demo.ts
 cd contracts
 snforge test
 
-# Backend (131 tests)
+# Backend (164 tests)
 cd backend
 npm test
 
@@ -194,7 +237,7 @@ GitHub Actions runs 3 parallel jobs on every push/PR to `main`:
 | Job | Steps | Duration |
 |-----|-------|----------|
 | **Contracts** | `scarb fmt --check` -> `scarb build` -> `snforge test` -> gas report | ~1m45s |
-| **Backend** | `npm ci` -> `prisma generate` -> `tsc --noEmit` -> `vitest` (131 tests) | ~25s |
+| **Backend** | `npm ci` -> `prisma generate` -> `tsc --noEmit` -> `vitest` (164 tests) | ~25s |
 | **Frontend** | `npm ci` -> `tsc --noEmit` -> `next build` | ~48s |
 
 ## Main Flow
@@ -209,6 +252,21 @@ Fan signs in (Web3Auth social login)
   -> Redis atomic SETNX (double-spend prevention)
   -> Backend confirms entry (< 50ms)
   -> Worker calls mark_used on-chain
+```
+
+### Bridge Flow (Digital Twin)
+
+```
+External ticketing provider sells ticket
+  -> Provider sends webhook (HMAC-SHA256 signed)
+  -> Backend validates signature + creates BridgedTicket (PENDING)
+  -> bridgeMint worker mints NFT to vault address
+  -> BridgedTicket updated to MINTED
+  -> Buyer logs in via Web3Auth (same email)
+  -> POST /v1/bridge/claim with JWT
+  -> bridgeClaim worker transfers NFT from vault to user wallet
+  -> BridgedTicket updated to CLAIMED
+  -> User now owns the NFT ticket
 ```
 
 ## Tech Stack
@@ -240,7 +298,7 @@ starknet-nft-ticketing/
 │   │   ├── queue/          # BullMQ job definitions
 │   │   ├── indexer/        # Starknet event indexer
 │   │   └── db/             # Prisma singleton + schema + migrations + Redis
-│   └── vitest.config.ts    # 131 Vitest tests
+│   └── vitest.config.ts    # 164 Vitest tests
 ├── frontend/               # Next.js app
 │   ├── app/                # Pages (App Router)
 │   └── components/         # React components
