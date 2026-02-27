@@ -18,7 +18,7 @@ const markUsedQueue = new Queue("markUsed", {
 
 const ScanValidateSchema = z.object({
   ticket_id: z.string().uuid(),
-  signature: z.string().min(1),
+  signature: z.string().regex(/^[0-9a-f]{64}$/, "Invalid signature format"),
   timestamp: z.number().int().positive(),
   gate_id: z.string().regex(/^[a-zA-Z0-9_-]{1,100}$/).optional(),
 });

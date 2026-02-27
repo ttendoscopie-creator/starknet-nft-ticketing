@@ -1,11 +1,9 @@
 import { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { PrismaClient } from "@prisma/client";
-import { authMiddleware, JWTPayload } from "../middleware/auth";
+import { prisma } from "../../db/prisma";
+import { authMiddleware } from "../middleware/auth";
 import { verifyERC20Transfer } from "../../services/starknet.service";
 import { paymentRateLimit } from "../middleware/rateLimit";
-
-const prisma = new PrismaClient();
 
 const TOKEN_ADDRESSES: Record<string, string> = {
   STRK: "0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d",
@@ -29,7 +27,6 @@ export async function paymentRoutes(app: FastifyInstance): Promise<void> {
       return reply.code(400).send({ error: "Invalid input", details: parseResult.error.issues });
     }
 
-    const user = (request as unknown as { user: JWTPayload }).user;
     const { eventId, txHash, buyerWalletAddress, currency } = parseResult.data;
 
     // Verify event exists and accepts this currency
@@ -67,7 +64,7 @@ export async function paymentRoutes(app: FastifyInstance): Promise<void> {
     const pendingMint = await prisma.pendingMint.create({
       data: {
         eventId,
-        buyerEmail: user.userId,
+        buyerEmail: request.user!.userId,
         buyerWalletAddress,
         cryptoTxHash: txHash,
         paymentAmount: event.primaryPrice,

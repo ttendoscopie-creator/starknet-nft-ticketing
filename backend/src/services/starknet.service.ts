@@ -1,4 +1,5 @@
 import { RpcProvider, Account, Contract, CallData, num, hash } from "starknet";
+import { logger } from "../config/logger";
 
 const STARKNET_RPC_URL =
   process.env.STARKNET_RPC_URL || "https://starknet-sepolia.public.blastapi.io";
@@ -11,14 +12,106 @@ const account = new Account(provider, DEPLOYER_ADDRESS, DEPLOYER_PRIVATE_KEY);
 
 const MAX_RETRIES = 3;
 const BACKOFF_BASE_MS = 1000;
+const TX_TIMEOUT_MS = 60_000;
+
+// --- Circuit Breaker ---
+
+class CircuitBreaker {
+  private failures = 0;
+  private lastFailure = 0;
+  private state: "closed" | "open" | "half-open" = "closed";
+  private readonly threshold: number;
+  private readonly resetMs: number;
+
+  constructor(threshold = 5, resetMs = 30_000) {
+    this.threshold = threshold;
+    this.resetMs = resetMs;
+  }
+
+  canExecute(): boolean {
+    if (this.state === "closed") return true;
+    if (this.state === "open") {
+      if (Date.now() - this.lastFailure > this.resetMs) {
+        this.state = "half-open";
+        return true;
+      }
+      return false;
+    }
+    return true; // half-open: allow one attempt
+  }
+
+  onSuccess(): void {
+    this.failures = 0;
+    this.state = "closed";
+  }
+
+  onFailure(): void {
+    this.failures++;
+    this.lastFailure = Date.now();
+    if (this.failures >= this.threshold) {
+      this.state = "open";
+      logger.warn({ failures: this.failures }, "Circuit breaker opened — RPC failures threshold reached");
+    }
+  }
+
+  getState(): string {
+    return this.state;
+  }
+}
+
+export const rpcCircuitBreaker = new CircuitBreaker();
+
+// --- Timeout helper ---
+
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error(`RPC timeout after ${ms}ms`)), ms)
+    ),
+  ]);
+}
+
+// --- Transient error detection ---
+
+function isTransientError(err: unknown): boolean {
+  if (!(err instanceof Error)) return true;
+  const msg = err.message.toLowerCase();
+  return (
+    msg.includes("timeout") ||
+    msg.includes("econnrefused") ||
+    msg.includes("econnreset") ||
+    msg.includes("enotfound") ||
+    msg.includes("fetch failed") ||
+    msg.includes("network") ||
+    msg.includes("rate limit") ||
+    msg.includes("429") ||
+    msg.includes("503") ||
+    msg.includes("502")
+  );
+}
+
+// --- Retry with circuit breaker ---
 
 async function withRetry<T>(fn: () => Promise<T>): Promise<T> {
   let lastError: Error | undefined;
   for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+    if (!rpcCircuitBreaker.canExecute()) {
+      throw new Error("Circuit breaker open — Starknet RPC unavailable");
+    }
     try {
-      return await fn();
+      const result = await fn();
+      rpcCircuitBreaker.onSuccess();
+      return result;
     } catch (err) {
       lastError = err instanceof Error ? err : new Error(String(err));
+      rpcCircuitBreaker.onFailure();
+
+      // Don't retry non-transient errors (e.g., contract revert, invalid args)
+      if (!isTransientError(err)) {
+        throw lastError;
+      }
+
       if (attempt < MAX_RETRIES - 1) {
         const delay = BACKOFF_BASE_MS * Math.pow(2, attempt);
         await new Promise((resolve) => setTimeout(resolve, delay));
@@ -58,7 +151,10 @@ export async function deployEventContract(params: DeployEventParams): Promise<st
       }),
     });
 
-    const receipt = await provider.waitForTransaction(result.transaction_hash);
+    const receipt = await withTimeout(
+      provider.waitForTransaction(result.transaction_hash),
+      TX_TIMEOUT_MS
+    );
 
     // Parse EventCreated event from receipt to get deployed contract address
     const eventCreatedSelector = hash.getSelectorFromName("EventCreated");
@@ -90,7 +186,10 @@ export async function mintTicket(
         token_id: { low: tokenId & BigInt("0xFFFFFFFFFFFFFFFF"), high: tokenId >> 128n },
       }),
     });
-    await provider.waitForTransaction(result.transaction_hash);
+    await withTimeout(
+      provider.waitForTransaction(result.transaction_hash),
+      TX_TIMEOUT_MS
+    );
     return result.transaction_hash;
   });
 }
@@ -108,7 +207,10 @@ export async function markUsedBatch(
       }),
     }));
     const result = await account.execute(calls);
-    await provider.waitForTransaction(result.transaction_hash);
+    await withTimeout(
+      provider.waitForTransaction(result.transaction_hash),
+      TX_TIMEOUT_MS
+    );
     return result.transaction_hash;
   });
 }
@@ -184,7 +286,10 @@ export async function revokeTicket(
         token_id: { low: tokenId & BigInt("0xFFFFFFFFFFFFFFFF"), high: tokenId >> 128n },
       }),
     });
-    await provider.waitForTransaction(result.transaction_hash);
+    await withTimeout(
+      provider.waitForTransaction(result.transaction_hash),
+      TX_TIMEOUT_MS
+    );
     return result.transaction_hash;
   });
 }

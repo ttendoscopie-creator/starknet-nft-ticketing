@@ -1,12 +1,10 @@
 import { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { PrismaClient } from "@prisma/client";
-import { authMiddleware, organizerOnly, JWTPayload } from "../middleware/auth";
+import { prisma } from "../../db/prisma";
+import { authMiddleware, organizerOnly } from "../middleware/auth";
 import { deployEventContract } from "../../services/starknet.service";
 import { logger } from "../../config/logger";
 import { createEventRateLimit } from "../middleware/rateLimit";
-
-const prisma = new PrismaClient();
 
 const MARKETPLACE_ADDRESS = process.env.MARKETPLACE_ADDRESS || "";
 
@@ -24,6 +22,8 @@ const CreateEventSchema = z.object({
   paymentTokenAddress: z.string().optional(),
 });
 
+const UUIDParam = z.object({ id: z.string().uuid() });
+
 export async function eventRoutes(app: FastifyInstance): Promise<void> {
   app.addHook("onRequest", authMiddleware);
 
@@ -33,14 +33,13 @@ export async function eventRoutes(app: FastifyInstance): Promise<void> {
     async (request, reply) => {
       const parseResult = CreateEventSchema.safeParse(request.body);
       if (!parseResult.success) {
-        return reply.code(400).send({ error: "Invalid input", details: parseResult.error.issues });
+        return reply.code(400).send({ error: "Invalid input" });
       }
 
-      const user = (request as unknown as { user: JWTPayload }).user;
       const data = parseResult.data;
 
       const organizer = await prisma.organizer.findFirst({
-        where: { id: user.userId },
+        where: { id: request.user!.userId },
       });
       if (!organizer) {
         return reply.code(404).send({ error: "Organizer not found" });
@@ -108,9 +107,13 @@ export async function eventRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.get("/v1/events/:id", async (request, reply) => {
-    const { id } = request.params as { id: string };
+    const parsed = UUIDParam.safeParse(request.params);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: "Invalid event ID format" });
+    }
+
     const event = await prisma.event.findUnique({
-      where: { id },
+      where: { id: parsed.data.id },
       include: {
         organizer: { select: { name: true } },
         _count: { select: { tickets: true } },

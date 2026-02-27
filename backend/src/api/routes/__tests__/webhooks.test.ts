@@ -9,8 +9,8 @@ const { mockPrisma } = vi.hoisted(() => ({
   },
 }));
 
-vi.mock("@prisma/client", () => ({
-  PrismaClient: vi.fn(() => mockPrisma),
+vi.mock("../../../db/prisma", () => ({
+  prisma: mockPrisma,
 }));
 
 // Mock Stripe
@@ -81,7 +81,7 @@ describe("POST /v1/webhooks/stripe", () => {
       },
     });
     expect(res.statusCode).toBe(400);
-    expect(res.json().error).toContain("Webhook Error");
+    expect(res.json().error).toBe("Webhook signature verification failed");
   });
 
   it("returns 200 and skips when metadata is missing", async () => {

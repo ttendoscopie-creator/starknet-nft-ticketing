@@ -1,15 +1,15 @@
 import { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { PrismaClient } from "@prisma/client";
-import { authMiddleware, JWTPayload } from "../middleware/auth";
+import { prisma } from "../../db/prisma";
+import { authMiddleware } from "../middleware/auth";
 import { createListingRateLimit } from "../middleware/rateLimit";
-
-const prisma = new PrismaClient();
 
 const CreateListingSchema = z.object({
   ticketId: z.string().uuid(),
   price: z.number().positive(),
 });
+
+const UUIDParam = z.object({ id: z.string().uuid() });
 
 export async function marketplaceRoutes(app: FastifyInstance): Promise<void> {
   // Get active listings (public, paginated)
@@ -42,10 +42,9 @@ export async function marketplaceRoutes(app: FastifyInstance): Promise<void> {
     async (request, reply) => {
       const parseResult = CreateListingSchema.safeParse(request.body);
       if (!parseResult.success) {
-        return reply.code(400).send({ error: "Invalid input", details: parseResult.error.issues });
+        return reply.code(400).send({ error: "Invalid input" });
       }
 
-      const user = (request as unknown as { user: JWTPayload }).user;
       const { ticketId, price } = parseResult.data;
 
       const ticket = await prisma.ticket.findUnique({
@@ -55,7 +54,7 @@ export async function marketplaceRoutes(app: FastifyInstance): Promise<void> {
       if (!ticket) {
         return reply.code(404).send({ error: "Ticket not found" });
       }
-      if (ticket.ownerAddress !== user.walletAddress) {
+      if (ticket.ownerAddress !== request.user!.walletAddress) {
         return reply.code(403).send({ error: "Not the ticket owner" });
       }
       if (ticket.status !== "AVAILABLE") {
@@ -80,7 +79,7 @@ export async function marketplaceRoutes(app: FastifyInstance): Promise<void> {
           const created = await tx.listing.create({
             data: {
               ticketId,
-              sellerAddress: user.walletAddress,
+              sellerAddress: request.user!.walletAddress,
               price,
             },
           });
@@ -106,17 +105,19 @@ export async function marketplaceRoutes(app: FastifyInstance): Promise<void> {
     "/v1/marketplace/listings/:id",
     { preHandler: authMiddleware },
     async (request, reply) => {
-      const { id } = request.params as { id: string };
-      const user = (request as unknown as { user: JWTPayload }).user;
+      const parsed = UUIDParam.safeParse(request.params);
+      if (!parsed.success) {
+        return reply.code(400).send({ error: "Invalid listing ID format" });
+      }
 
       const listing = await prisma.listing.findUnique({
-        where: { id },
+        where: { id: parsed.data.id },
         include: { ticket: true },
       });
       if (!listing) {
         return reply.code(404).send({ error: "Listing not found" });
       }
-      if (listing.sellerAddress !== user.walletAddress) {
+      if (listing.sellerAddress !== request.user!.walletAddress) {
         return reply.code(403).send({ error: "Not the seller" });
       }
       if (!listing.isActive) {
@@ -125,7 +126,7 @@ export async function marketplaceRoutes(app: FastifyInstance): Promise<void> {
 
       await prisma.$transaction([
         prisma.listing.update({
-          where: { id },
+          where: { id: parsed.data.id },
           data: { isActive: false },
         }),
         prisma.ticket.update({

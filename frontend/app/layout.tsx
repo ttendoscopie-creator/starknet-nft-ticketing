@@ -190,6 +190,12 @@ function NavBar() {
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en">
+      <head>
+        <title>NFT Tickets — Starknet Event Ticketing</title>
+        <meta name="description" content="Secure, transparent event ticketing powered by Starknet. Buy tickets, resell safely with price caps, and validate entry with rotating QR codes." />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <link rel="icon" href="/favicon.ico" />
+      </head>
       <body className="min-h-screen bg-gray-50 dark:bg-gray-900">
         <AuthProvider>
           <NavBar />

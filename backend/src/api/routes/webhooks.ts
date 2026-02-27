@@ -1,13 +1,12 @@
 import { FastifyInstance } from "fastify";
 import Stripe from "stripe";
-import { PrismaClient } from "@prisma/client";
+import { prisma } from "../../db/prisma";
 import { Queue } from "bullmq";
 import { bullmqConnection } from "../../db/redis";
 import { webhookRateLimit } from "../middleware/rateLimit";
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
 const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET!;
-const prisma = new PrismaClient();
 const mintQueue = new Queue("mint", {
   connection: bullmqConnection,
   defaultJobOptions: {
@@ -40,9 +39,8 @@ export async function webhookRoutes(app: FastifyInstance): Promise<void> {
         STRIPE_WEBHOOK_SECRET
       );
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Unknown error";
-      app.log.warn({ err: message }, "Stripe webhook signature verification failed");
-      return reply.code(400).send({ error: `Webhook Error: ${message}` });
+      app.log.warn({ err }, "Stripe webhook signature verification failed");
+      return reply.code(400).send({ error: "Webhook signature verification failed" });
     }
 
     if (event.type === "checkout.session.completed") {

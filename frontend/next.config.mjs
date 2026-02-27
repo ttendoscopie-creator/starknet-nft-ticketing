@@ -16,7 +16,23 @@ const nextConfig = {
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
           {
             key: "Strict-Transport-Security",
-            value: "max-age=31536000; includeSubDomains",
+            value: "max-age=63072000; includeSubDomains; preload",
+          },
+          {
+            key: "Permissions-Policy",
+            value: "camera=(self), microphone=(), geolocation=()",
+          },
+          {
+            key: "Content-Security-Policy",
+            value: [
+              "default-src 'self'",
+              "script-src 'self' 'unsafe-eval' 'unsafe-inline' https://auth.web3auth.io",
+              "style-src 'self' 'unsafe-inline'",
+              "img-src 'self' data: blob:",
+              "font-src 'self'",
+              "connect-src 'self' https://*.web3auth.io https://*.blastapi.io https://*.alchemy.com wss://*.web3auth.io " + (process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"),
+              "frame-src 'self' https://auth.web3auth.io",
+            ].join("; "),
           },
         ],
       },

@@ -21,8 +21,8 @@ const { mockPrisma } = vi.hoisted(() => ({
   },
 }));
 
-vi.mock("@prisma/client", () => ({
-  PrismaClient: vi.fn(() => mockPrisma),
+vi.mock("../../../db/prisma", () => ({
+  prisma: mockPrisma,
 }));
 
 import { marketplaceRoutes } from "../marketplace";
@@ -243,7 +243,7 @@ describe("DELETE /v1/marketplace/listings/:id", () => {
   it("returns 401 without auth token", async () => {
     const res = await app.inject({
       method: "DELETE",
-      url: "/v1/marketplace/listings/l1",
+      url: "/v1/marketplace/listings/550e8400-e29b-41d4-a716-446655440001",
     });
     expect(res.statusCode).toBe(401);
   });
@@ -253,7 +253,7 @@ describe("DELETE /v1/marketplace/listings/:id", () => {
 
     const res = await app.inject({
       method: "DELETE",
-      url: "/v1/marketplace/listings/l1",
+      url: "/v1/marketplace/listings/550e8400-e29b-41d4-a716-446655440001",
       headers: { authorization: `Bearer ${fanToken}` },
     });
     expect(res.statusCode).toBe(404);
@@ -269,7 +269,7 @@ describe("DELETE /v1/marketplace/listings/:id", () => {
 
     const res = await app.inject({
       method: "DELETE",
-      url: "/v1/marketplace/listings/l1",
+      url: "/v1/marketplace/listings/550e8400-e29b-41d4-a716-446655440001",
       headers: { authorization: `Bearer ${fanToken}` },
     });
     expect(res.statusCode).toBe(403);
@@ -285,7 +285,7 @@ describe("DELETE /v1/marketplace/listings/:id", () => {
 
     const res = await app.inject({
       method: "DELETE",
-      url: "/v1/marketplace/listings/l1",
+      url: "/v1/marketplace/listings/550e8400-e29b-41d4-a716-446655440001",
       headers: { authorization: `Bearer ${fanToken}` },
     });
     expect(res.statusCode).toBe(400);
@@ -303,7 +303,7 @@ describe("DELETE /v1/marketplace/listings/:id", () => {
 
     const res = await app.inject({
       method: "DELETE",
-      url: "/v1/marketplace/listings/l1",
+      url: "/v1/marketplace/listings/550e8400-e29b-41d4-a716-446655440001",
       headers: { authorization: `Bearer ${fanToken}` },
     });
     expect(res.statusCode).toBe(200);

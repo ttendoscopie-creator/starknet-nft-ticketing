@@ -27,16 +27,17 @@ export default function MarketplacePage() {
   const [error, setError] = useState<string | null>(null);
   const [buyingId, setBuyingId] = useState<string | null>(null);
 
-  const fetchListings = useCallback(async () => {
+  const fetchListings = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
     setError(null);
 
     try {
-      const res = await fetch(`${API_URL}/v1/marketplace/listings`);
+      const res = await fetch(`${API_URL}/v1/marketplace/listings`, { signal });
       if (!res.ok) throw new Error(`Failed to fetch listings (${res.status})`);
-      const data: Listing[] = await res.json();
-      setListings(data);
+      const data = await res.json();
+      setListings(data.listings ?? data);
     } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") return;
       setError(err instanceof Error ? err.message : "Failed to load listings");
     } finally {
       setLoading(false);
@@ -44,7 +45,9 @@ export default function MarketplacePage() {
   }, []);
 
   useEffect(() => {
-    fetchListings();
+    const controller = new AbortController();
+    fetchListings(controller.signal);
+    return () => controller.abort();
   }, [fetchListings]);
 
   const handleBuy = useCallback(

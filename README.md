@@ -32,11 +32,12 @@ A full-stack decentralized event ticketing platform on Starknet. Tickets are ERC
 | Layer | Components |
 |-------|------------|
 | **Routes** | `scan`, `tickets`, `events`, `marketplace`, `payments` (crypto), `webhooks` (Stripe) |
-| **Services** | `qr` (HMAC-SHA256 signing), `starknet` (mint/markUsed with retry, ERC20 verification), `ticket` (Prisma CRUD) |
-| **Auth** | JWT with roles: `organizer`, `staff`, `fan` |
+| **Services** | `qr` (HMAC-SHA256 signing), `starknet` (mint/markUsed with circuit breaker + retry, ERC20 verification), `ticket` (Prisma CRUD) |
+| **Auth** | JWT with roles: `organizer`, `staff`, `fan` — typed via Fastify module augmentation |
 | **Queue** | BullMQ workers for async on-chain operations (mint, markUsed) |
-| **DB** | PostgreSQL (Prisma) + Redis (ticket cache, atomic double-spend prevention) |
-| **Indexer** | Starknet event indexer for on-chain state sync |
+| **DB** | PostgreSQL (Prisma singleton) + Redis (ticket cache, atomic double-spend prevention) |
+| **Indexer** | Starknet event indexer with adaptive backoff |
+| **Hardening** | Helmet security headers, Zod UUID validation on all params, graceful shutdown, circuit breaker for RPC |
 
 ## Frontend (Next.js 14)
 
@@ -72,28 +73,48 @@ Organizer ──< Event ──< Ticket ──< ScanLog
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
+| `GET` | `/health` | — | Health check (DB + Redis with 5s timeout) |
 | `POST` | `/v1/scan/validate` | staff | Validate QR (< 50 ms) |
 | `POST` | `/v1/webhooks/stripe` | — | Stripe payment webhook |
 | `POST` | `/v1/events` | organizer | Create event + deploy contract |
 | `GET` | `/v1/events` | organizer | List events |
 | `GET` | `/v1/events/:id` | any | Get event details |
 | `GET` | `/v1/tickets` | fan | User's tickets |
+| `GET` | `/v1/tickets/:id` | fan | Get ticket details |
 | `GET` | `/v1/tickets/:id/qr` | fan | Generate signed QR payload |
-| `GET` | `/v1/marketplace/listings` | public | Active listings |
+| `GET` | `/v1/tickets/:id/qr-image` | fan | Generate QR as data URL image |
+| `GET` | `/v1/events/:eventId/tickets` | fan | List tickets for an event |
+| `GET` | `/v1/marketplace/listings` | public | Active listings (paginated) |
 | `POST` | `/v1/marketplace/listings` | fan | Create listing |
 | `DELETE` | `/v1/marketplace/listings/:id` | fan | Cancel listing |
 | `POST` | `/v1/payments/verify-crypto` | fan | Verify on-chain ERC20 payment (STRK/USDC/USDT) |
 
 ## Security
 
-- QR codes rotate every 25s, expire at 30s server-side
-- HMAC-SHA256 signed QR payloads
-- Redis SETNX for atomic anti-double-scan
+**On-chain**
 - CEI pattern in Marketplace (anti-reentrancy)
 - Price cap enforced on-chain (`resale_cap_bps`)
 - Session keys scoped and time-limited (max 24h)
 - Account recovery with guardian + 24h timelock
 - Session keys auto-revoked on recovery execution
+
+**Backend**
+- Helmet security headers (HSTS, X-Frame-Options, etc.)
+- QR codes rotate every 25s, expire at 30s server-side
+- HMAC-SHA256 signed QR payloads with hex-only signature validation
+- Redis SETNX for atomic anti-double-scan
+- Zod UUID validation on all route params
+- Sanitized error responses (no internal details leaked)
+- Graceful shutdown (SIGTERM/SIGINT)
+- Circuit breaker on Starknet RPC (auto-opens after 5 failures, half-open probe after 30s)
+- Transient-only retry (network/timeout errors retried, contract reverts fail fast)
+- Health check with 5s timeout on DB + Redis
+- Strict env validation (hex format, URL format, Stripe key prefix)
+
+**Frontend**
+- Content Security Policy (Web3Auth + RPC domains whitelisted)
+- HSTS with preload, Permissions-Policy
+- AbortController on all fetch calls (prevents memory leaks)
 
 ## Getting Started
 
@@ -156,7 +177,7 @@ npx tsx demo.ts
 cd contracts
 snforge test
 
-# Backend (107 tests)
+# Backend (131 tests)
 cd backend
 npm test
 
@@ -173,7 +194,7 @@ GitHub Actions runs 3 parallel jobs on every push/PR to `main`:
 | Job | Steps | Duration |
 |-----|-------|----------|
 | **Contracts** | `scarb fmt --check` -> `scarb build` -> `snforge test` -> gas report | ~1m45s |
-| **Backend** | `npm ci` -> `prisma generate` -> `tsc --noEmit` -> `vitest` (107 tests) | ~25s |
+| **Backend** | `npm ci` -> `prisma generate` -> `tsc --noEmit` -> `vitest` (131 tests) | ~25s |
 | **Frontend** | `npm ci` -> `tsc --noEmit` -> `next build` | ~48s |
 
 ## Main Flow
@@ -195,7 +216,7 @@ Fan signs in (Web3Auth social login)
 | Layer | Technology |
 |-------|-----------|
 | Smart Contracts | Cairo 2.9, Scarb, Starknet Foundry |
-| Backend | Node.js 20, Fastify 4, TypeScript 5 |
+| Backend | Node.js 20, Fastify 5, TypeScript 5, Zod |
 | Database | PostgreSQL 16 (Prisma 5), Redis 7 (ioredis) |
 | Queue | BullMQ 5 |
 | Frontend | Next.js 14, React 18, Tailwind CSS 3 |
@@ -211,15 +232,15 @@ Fan signs in (Web3Auth social login)
 starknet-nft-ticketing/
 ├── contracts/              # Cairo smart contracts
 │   ├── src/                # Contract sources (6 contracts)
-│   └── tests/              # 71 snforge tests
+│   └── tests/              # snforge tests
 ├── backend/                # Fastify API
 │   ├── src/
 │   │   ├── api/            # Routes + middleware
 │   │   ├── services/       # Business logic
 │   │   ├── queue/          # BullMQ job definitions
 │   │   ├── indexer/        # Starknet event indexer
-│   │   └── db/             # Prisma schema + migrations + Redis
-│   └── vitest.config.ts    # 107 Vitest tests
+│   │   └── db/             # Prisma singleton + schema + migrations + Redis
+│   └── vitest.config.ts    # 131 Vitest tests
 ├── frontend/               # Next.js app
 │   ├── app/                # Pages (App Router)
 │   └── components/         # React components

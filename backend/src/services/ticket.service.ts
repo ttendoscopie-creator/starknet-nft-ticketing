@@ -1,6 +1,5 @@
-import { PrismaClient, TicketStatus } from "@prisma/client";
-
-const prisma = new PrismaClient();
+import { TicketStatus } from "@prisma/client";
+import { prisma } from "../db/prisma";
 
 export async function createTicket(params: {
   eventId: string;
@@ -94,4 +93,3 @@ export async function revokeTicket(ticketId: string, txHash?: string) {
   ]);
 }
 
-export { prisma };

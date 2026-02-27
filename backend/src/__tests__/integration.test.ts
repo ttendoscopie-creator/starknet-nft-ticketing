@@ -44,8 +44,9 @@ const {
       count: vi.fn(),
     },
     scanLog: { create: vi.fn() },
-    $queryRaw: vi.fn(),
+    $queryRaw: vi.fn().mockResolvedValue([{ 1: 1 }]),
     $transaction: vi.fn(),
+    $disconnect: vi.fn().mockResolvedValue(undefined),
   },
   mockDeployEventContract: vi.fn(),
   mockMintTicket: vi.fn(),
@@ -60,14 +61,21 @@ const {
 
 // Set env before imports
 vi.hoisted(() => {
-  process.env.MARKETPLACE_ADDRESS = "0xmarketplace";
-  process.env.FACTORY_ADDRESS = "0xfactory";
+  process.env.MARKETPLACE_ADDRESS = "0xaabbccddee";
+  process.env.FACTORY_ADDRESS = "0x1122334455";
   process.env.FRONTEND_URL = "http://localhost:3000";
   process.env.DATABASE_URL = "postgresql://test:test@localhost:5432/test";
+  process.env.JWT_SECRET = "test-secret-that-is-at-least-32-chars-long!!";
+  process.env.QR_SIGNING_PRIVATE_KEY = "test-qr-key-that-is-at-least-32-chars-long!!";
+  process.env.STRIPE_SECRET_KEY = "sk_test_fakekey1234567890";
+  process.env.STRIPE_WEBHOOK_SECRET = "whsec_fake";
+  process.env.DEPLOYER_PRIVATE_KEY = "0xabc123";
+  process.env.DEPLOYER_ADDRESS = "0xdef456";
+  process.env.REDIS_URL = "redis://localhost:6379";
 });
 
-vi.mock("@prisma/client", () => ({
-  PrismaClient: vi.fn(() => mockPrisma),
+vi.mock("../db/prisma", () => ({
+  prisma: mockPrisma,
 }));
 
 vi.mock("../services/starknet.service", () => ({
@@ -121,6 +129,14 @@ vi.mock("@fastify/rate-limit", () => ({
   default: vi.fn(async () => {}),
 }));
 
+vi.mock("@fastify/helmet", () => ({
+  default: vi.fn(async () => {}),
+}));
+
+vi.mock("../config/env", () => ({
+  validateEnv: vi.fn(),
+}));
+
 import { buildApp } from "../api/server";
 
 // ── Test data ──────────────────────────────────────────────────────────
@@ -145,7 +161,7 @@ describe("Integration: Event → Mint → Scan → Mark Used", () => {
 
   // Track state across the lifecycle
   const state = {
-    eventId: "evt-1",
+    eventId: "770e8400-e29b-41d4-a716-446655440000",
     contractAddress: "0xdeployed_event_contract",
     ticketId: "550e8400-e29b-41d4-a716-446655440000",
     tokenId: BigInt(1),

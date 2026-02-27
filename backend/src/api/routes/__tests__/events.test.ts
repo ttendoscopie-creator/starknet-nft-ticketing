@@ -21,8 +21,8 @@ const { mockPrisma } = vi.hoisted(() => ({
   },
 }));
 
-vi.mock("@prisma/client", () => ({
-  PrismaClient: vi.fn(() => mockPrisma),
+vi.mock("../../../db/prisma", () => ({
+  prisma: mockPrisma,
 }));
 
 // Mock starknet service
@@ -192,13 +192,25 @@ describe("POST /v1/events — acceptedCurrencies", () => {
 });
 
 describe("GET /v1/events/:id", () => {
+  const validEventId = "550e8400-e29b-41d4-a716-446655440000";
+
+  it("returns 400 when ID is not a valid UUID", async () => {
+    const token = makeOrganizerToken();
+    const res = await app.inject({
+      method: "GET",
+      url: "/v1/events/nonexistent",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
   it("returns 404 when event does not exist", async () => {
     mockPrisma.event.findUnique.mockResolvedValue(null);
 
     const token = makeOrganizerToken();
     const res = await app.inject({
       method: "GET",
-      url: "/v1/events/nonexistent",
+      url: `/v1/events/${validEventId}`,
       headers: { authorization: `Bearer ${token}` },
     });
     expect(res.statusCode).toBe(404);
@@ -206,7 +218,7 @@ describe("GET /v1/events/:id", () => {
 
   it("returns event with organizer name and ticket count", async () => {
     mockPrisma.event.findUnique.mockResolvedValue({
-      id: "e1",
+      id: validEventId,
       name: "Concert",
       organizer: { name: "Org" },
       _count: { tickets: 42 },
@@ -215,7 +227,7 @@ describe("GET /v1/events/:id", () => {
     const token = makeOrganizerToken();
     const res = await app.inject({
       method: "GET",
-      url: "/v1/events/e1",
+      url: `/v1/events/${validEventId}`,
       headers: { authorization: `Bearer ${token}` },
     });
     expect(res.statusCode).toBe(200);

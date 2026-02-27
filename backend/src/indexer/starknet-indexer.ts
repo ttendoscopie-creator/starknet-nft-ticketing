@@ -1,14 +1,15 @@
 import { RpcProvider, num, hash } from "starknet";
-import { PrismaClient } from "@prisma/client";
+import { prisma } from "../db/prisma";
 import { setTicketCache, redis } from "../db/redis";
 import { logger } from "../config/logger";
-
-const prisma = new PrismaClient();
 const STARKNET_RPC_URL =
   process.env.STARKNET_RPC_URL || "https://starknet-sepolia.public.blastapi.io";
 const provider = new RpcProvider({ nodeUrl: STARKNET_RPC_URL });
 
-const POLL_INTERVAL_MS = 2000;
+const POLL_INTERVAL_MS = Number(process.env.INDEXER_POLL_MS) || 2000;
+const MAX_POLL_INTERVAL_MS = 60_000;
+let currentPollInterval = POLL_INTERVAL_MS;
+let consecutiveErrors = 0;
 const FACTORY_ADDRESS = process.env.FACTORY_ADDRESS || "";
 
 // Compute proper sn_keccak selectors from event names
@@ -242,8 +243,17 @@ async function pollEvents(): Promise<void> {
 
     await saveIndexerState({ lastIndexedBlock: toBlock });
     logger.info({ fromBlock, toBlock }, "Indexed blocks");
+
+    // Reset backoff on success
+    consecutiveErrors = 0;
+    currentPollInterval = POLL_INTERVAL_MS;
   } catch (err) {
-    logger.error({ err }, "Indexer error");
+    consecutiveErrors++;
+    currentPollInterval = Math.min(
+      POLL_INTERVAL_MS * Math.pow(2, consecutiveErrors),
+      MAX_POLL_INTERVAL_MS
+    );
+    logger.error({ err, backoffMs: currentPollInterval }, "Indexer error, backing off");
   }
 }
 
@@ -257,10 +267,10 @@ async function startIndexer(): Promise<void> {
     "Starting Starknet indexer (polling mode)"
   );
 
-  // Continuous polling loop
+  // Continuous polling loop with adaptive backoff
   const poll = async () => {
     await pollEvents();
-    setTimeout(poll, POLL_INTERVAL_MS);
+    setTimeout(poll, currentPollInterval);
   };
 
   await poll();

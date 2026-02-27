@@ -11,8 +11,8 @@ const { mockPrisma } = vi.hoisted(() => ({
   },
 }));
 
-vi.mock("@prisma/client", () => ({
-  PrismaClient: vi.fn(() => mockPrisma),
+vi.mock("../../../db/prisma", () => ({
+  prisma: mockPrisma,
 }));
 
 // Mock starknet service

@@ -9,6 +9,12 @@ export interface JWTPayload {
   role: "fan" | "organizer" | "staff";
 }
 
+declare module "fastify" {
+  interface FastifyRequest {
+    user?: JWTPayload;
+  }
+}
+
 export async function authMiddleware(
   request: FastifyRequest,
   reply: FastifyReply
@@ -22,7 +28,7 @@ export async function authMiddleware(
   const token = authHeader.slice(7);
   try {
     const decoded = jwt.verify(token, JWT_SECRET) as JWTPayload;
-    (request as FastifyRequest & { user: JWTPayload }).user = decoded;
+    request.user = decoded;
   } catch {
     reply.code(401).send({ error: "Invalid or expired token" });
   }
@@ -36,8 +42,7 @@ export async function organizerOnly(
   request: FastifyRequest,
   reply: FastifyReply
 ): Promise<void> {
-  const user = (request as FastifyRequest & { user?: JWTPayload }).user;
-  if (!user || user.role !== "organizer") {
+  if (!request.user || request.user.role !== "organizer") {
     reply.code(403).send({ error: "Organizer access required" });
   }
 }
@@ -46,8 +51,7 @@ export async function staffOnly(
   request: FastifyRequest,
   reply: FastifyReply
 ): Promise<void> {
-  const user = (request as FastifyRequest & { user?: JWTPayload }).user;
-  if (!user || (user.role !== "staff" && user.role !== "organizer")) {
+  if (!request.user || (request.user.role !== "staff" && request.user.role !== "organizer")) {
     reply.code(403).send({ error: "Staff access required" });
   }
 }

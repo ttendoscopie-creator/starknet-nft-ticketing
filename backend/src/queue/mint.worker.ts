@@ -1,10 +1,8 @@
 import { Worker, Job } from "bullmq";
-import { PrismaClient } from "@prisma/client";
+import { prisma } from "../db/prisma";
 import { mintTicket } from "../services/starknet.service";
 import { setTicketCache, bullmqConnection } from "../db/redis";
 import { logger } from "../config/logger";
-
-const prisma = new PrismaClient();
 
 interface MintJobData {
   pendingMintId: string;

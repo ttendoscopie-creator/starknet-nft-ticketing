@@ -9,6 +9,10 @@ const { mockExecute, mockWaitForTransaction, mockCallContract, mockToHex, mockCo
   mockGetTransactionReceipt: vi.fn(),
 }));
 
+vi.mock("../../config/logger", () => ({
+  logger: { info: vi.fn(), error: vi.fn(), warn: vi.fn(), debug: vi.fn() },
+}));
+
 vi.mock("starknet", () => ({
   RpcProvider: vi.fn(() => ({
     waitForTransaction: mockWaitForTransaction,
@@ -70,10 +74,20 @@ describe("mintTicket", () => {
 
   it("retries up to 3 times then throws the last error", async () => {
     vi.useRealTimers();
-    mockExecute.mockRejectedValue(new Error("Permanent failure"));
+    mockExecute.mockRejectedValue(new Error("fetch failed"));
 
-    await expect(mintTicket("0xcontract", "0xto", 1n)).rejects.toThrow("Permanent failure");
+    await expect(mintTicket("0xcontract", "0xto", 1n)).rejects.toThrow("fetch failed");
     expect(mockExecute).toHaveBeenCalledTimes(3);
+
+    vi.useFakeTimers();
+  });
+
+  it("does not retry non-transient errors", async () => {
+    vi.useRealTimers();
+    mockExecute.mockRejectedValue(new Error("Contract reverted: insufficient balance"));
+
+    await expect(mintTicket("0xcontract", "0xto", 1n)).rejects.toThrow("Contract reverted");
+    expect(mockExecute).toHaveBeenCalledTimes(1);
 
     vi.useFakeTimers();
   });

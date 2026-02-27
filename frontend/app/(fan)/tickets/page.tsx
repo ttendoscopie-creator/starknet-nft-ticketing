@@ -23,7 +23,7 @@ export default function TicketsPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchTickets = useCallback(async () => {
+  const fetchTickets = useCallback(async (signal?: AbortSignal) => {
     if (!token) return;
     setLoading(true);
     setError(null);
@@ -31,11 +31,13 @@ export default function TicketsPage() {
     try {
       const res = await fetch(`${API_URL}/v1/tickets`, {
         headers: { Authorization: `Bearer ${token}` },
+        signal,
       });
       if (!res.ok) throw new Error(`Failed to fetch tickets (${res.status})`);
       const data: Ticket[] = await res.json();
       setTickets(data);
     } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") return;
       setError(err instanceof Error ? err.message : "Failed to load tickets");
     } finally {
       setLoading(false);
@@ -43,9 +45,10 @@ export default function TicketsPage() {
   }, [token]);
 
   useEffect(() => {
-    if (connected && token) {
-      fetchTickets();
-    }
+    if (!connected || !token) return;
+    const controller = new AbortController();
+    fetchTickets(controller.signal);
+    return () => controller.abort();
   }, [connected, token, fetchTickets]);
 
   if (!connected) {
