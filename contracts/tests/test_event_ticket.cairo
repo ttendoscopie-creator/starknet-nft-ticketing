@@ -435,10 +435,8 @@ fn test_unlimited_transfers_when_zero() {
 fn test_constructor_rejects_zero_organizer() {
     let contract = declare("EventTicket").unwrap().contract_class();
     let calldata = array![
-        100, 1000000, 11000, 1000,
-        0, // organizer = zero
-        marketplace().into(),
-        0, 0
+        100, 1000000, 11000, 1000, 0, // organizer = zero
+        marketplace().into(), 0, 0,
     ];
     match contract.deploy(@calldata) {
         Result::Ok(_) => panic!("Should have failed with INVALID_ORGANIZER"),
@@ -451,10 +449,8 @@ fn test_constructor_rejects_zero_organizer() {
 fn test_constructor_rejects_zero_marketplace() {
     let contract = declare("EventTicket").unwrap().contract_class();
     let calldata = array![
-        100, 1000000, 11000, 1000,
-        organizer().into(),
-        0, // marketplace = zero
-        0, 0
+        100, 1000000, 11000, 1000, organizer().into(), 0, // marketplace = zero
+        0, 0,
     ];
     match contract.deploy(@calldata) {
         Result::Ok(_) => panic!("Should have failed with INVALID_MARKETPLACE"),
@@ -467,10 +463,14 @@ fn test_constructor_rejects_zero_marketplace() {
 fn test_constructor_rejects_cap_too_high() {
     let contract = declare("EventTicket").unwrap().contract_class();
     let calldata = array![
-        100, 1000000, 50001, 1000, // resale_cap_bps = 50001 (> 500%)
+        100,
+        1000000,
+        50001,
+        1000, // resale_cap_bps = 50001 (> 500%)
         organizer().into(),
         marketplace().into(),
-        0, 0
+        0,
+        0,
     ];
     match contract.deploy(@calldata) {
         Result::Ok(_) => panic!("Should have failed with CAP_MAX_500_PCT"),
@@ -483,10 +483,14 @@ fn test_constructor_rejects_cap_too_high() {
 fn test_constructor_rejects_cap_too_low() {
     let contract = declare("EventTicket").unwrap().contract_class();
     let calldata = array![
-        100, 1000000, 9999, 1000, // resale_cap_bps = 9999 (< 100%)
+        100,
+        1000000,
+        9999,
+        1000, // resale_cap_bps = 9999 (< 100%)
         organizer().into(),
         marketplace().into(),
-        0, 0
+        0,
+        0,
     ];
     match contract.deploy(@calldata) {
         Result::Ok(_) => panic!("Should have failed with CAP_MIN_100_PCT"),
@@ -499,10 +503,14 @@ fn test_constructor_rejects_cap_too_low() {
 fn test_constructor_rejects_royalty_too_high() {
     let contract = declare("EventTicket").unwrap().contract_class();
     let calldata = array![
-        100, 1000000, 11000, 2001, // royalty_bps = 2001 (> 20%)
+        100,
+        1000000,
+        11000,
+        2001, // royalty_bps = 2001 (> 20%)
         organizer().into(),
         marketplace().into(),
-        0, 0
+        0,
+        0,
     ];
     match contract.deploy(@calldata) {
         Result::Ok(_) => panic!("Should have failed with ROYALTY_MAX_20_PCT"),

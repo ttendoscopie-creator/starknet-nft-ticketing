@@ -155,8 +155,14 @@ pub mod Marketplace {
 
             // INTERACTIONS — payments first, NFT transfer last
             let erc20 = IERC20Dispatcher { contract_address: self.payment_token.read() };
-            assert(erc20.transfer_from(buyer, royalty_recipient, royalty_amount), 'ROYALTY_TRANSFER_FAILED');
-            assert(erc20.transfer_from(buyer, self.platform_treasury.read(), platform_fee), 'FEE_TRANSFER_FAILED');
+            assert(
+                erc20.transfer_from(buyer, royalty_recipient, royalty_amount),
+                'ROYALTY_TRANSFER_FAILED',
+            );
+            assert(
+                erc20.transfer_from(buyer, self.platform_treasury.read(), platform_fee),
+                'FEE_TRANSFER_FAILED',
+            );
             assert(erc20.transfer_from(buyer, seller, seller_amount), 'SELLER_TRANSFER_FAILED');
             ticket.transfer_ticket(seller, buyer, token_id, price_u128);
         }

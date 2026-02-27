@@ -486,11 +486,8 @@ fn test_initiate_recovery_already_pending_fails() {
 fn test_account_constructor_rejects_zero_guardian() {
     let key_pair = StarkCurveKeyPairImpl::generate();
     let contract = declare("AccountContract").unwrap().contract_class();
-    let calldata = array![
-        key_pair.public_key,
-        0, // guardian = zero
-        86400
-    ];
+    let calldata = array![key_pair.public_key, 0, // guardian = zero
+    86400];
     match contract.deploy(@calldata) {
         Result::Ok(_) => panic!("Should have failed with INVALID_GUARDIAN"),
         Result::Err(_) => (),
@@ -502,10 +499,7 @@ fn test_account_constructor_rejects_zero_guardian() {
 fn test_account_constructor_rejects_zero_delay() {
     let key_pair = StarkCurveKeyPairImpl::generate();
     let contract = declare("AccountContract").unwrap().contract_class();
-    let calldata = array![
-        key_pair.public_key,
-        guardian_address().into(),
-        0 // recovery_delay = 0
+    let calldata = array![key_pair.public_key, guardian_address().into(), 0 // recovery_delay = 0
     ];
     match contract.deploy(@calldata) {
         Result::Ok(_) => panic!("Should have failed with DELAY_MUST_BE_POSITIVE"),
@@ -517,11 +511,8 @@ fn test_account_constructor_rejects_zero_delay() {
 #[test]
 fn test_account_constructor_rejects_zero_pubkey() {
     let contract = declare("AccountContract").unwrap().contract_class();
-    let calldata = array![
-        0, // owner_pubkey = zero
-        guardian_address().into(),
-        86400
-    ];
+    let calldata = array![0, // owner_pubkey = zero
+    guardian_address().into(), 86400];
     match contract.deploy(@calldata) {
         Result::Ok(_) => panic!("Should have failed with INVALID_PUBKEY"),
         Result::Err(_) => (),

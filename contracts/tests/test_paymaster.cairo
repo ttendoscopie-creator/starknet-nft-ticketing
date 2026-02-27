@@ -318,13 +318,8 @@ fn test_unsponsor_account_success() {
 #[test]
 fn test_paymaster_constructor_rejects_zero_owner() {
     let contract = declare("Paymaster").unwrap().contract_class();
-    let calldata = array![
-        0, // owner = zero
-        strk_token().into(),
-        100000, 0,
-        10,
-        60
-    ];
+    let calldata = array![0, // owner = zero
+    strk_token().into(), 100000, 0, 10, 60];
     match contract.deploy(@calldata) {
         Result::Ok(_) => panic!("Should have failed with INVALID_OWNER"),
         Result::Err(_) => (),
@@ -335,13 +330,8 @@ fn test_paymaster_constructor_rejects_zero_owner() {
 #[test]
 fn test_paymaster_constructor_rejects_zero_token() {
     let contract = declare("Paymaster").unwrap().contract_class();
-    let calldata = array![
-        owner().into(),
-        0, // strk_token = zero
-        100000, 0,
-        10,
-        60
-    ];
+    let calldata = array![owner().into(), 0, // strk_token = zero
+    100000, 0, 10, 60];
     match contract.deploy(@calldata) {
         Result::Ok(_) => panic!("Should have failed with INVALID_TOKEN"),
         Result::Err(_) => (),
@@ -352,13 +342,8 @@ fn test_paymaster_constructor_rejects_zero_token() {
 #[test]
 fn test_paymaster_constructor_rejects_zero_gas() {
     let contract = declare("Paymaster").unwrap().contract_class();
-    let calldata = array![
-        owner().into(),
-        strk_token().into(),
-        0, 0, // max_gas_per_tx = 0
-        10,
-        60
-    ];
+    let calldata = array![owner().into(), strk_token().into(), 0, 0, // max_gas_per_tx = 0
+    10, 60];
     match contract.deploy(@calldata) {
         Result::Ok(_) => panic!("Should have failed with MAX_GAS_MUST_BE_POSITIVE"),
         Result::Err(_) => (),
@@ -370,11 +355,8 @@ fn test_paymaster_constructor_rejects_zero_gas() {
 fn test_paymaster_constructor_rejects_zero_txs() {
     let contract = declare("Paymaster").unwrap().contract_class();
     let calldata = array![
-        owner().into(),
-        strk_token().into(),
-        100000, 0,
-        0, // max_txs_per_day = 0
-        60
+        owner().into(), strk_token().into(), 100000, 0, 0, // max_txs_per_day = 0
+        60,
     ];
     match contract.deploy(@calldata) {
         Result::Ok(_) => panic!("Should have failed with MAX_TXS_MUST_BE_POSITIVE"),
