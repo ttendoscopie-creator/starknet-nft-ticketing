@@ -2,6 +2,7 @@ import { Worker, Job } from "bullmq";
 import { PrismaClient } from "@prisma/client";
 import { markUsedBatch } from "../services/starknet.service";
 import { bullmqConnection } from "../db/redis";
+import { logger } from "../config/logger";
 
 const prisma = new PrismaClient();
 
@@ -30,8 +31,9 @@ async function flushBatch(): Promise<void> {
   for (const [contractAddress, tokenIds] of grouped) {
     try {
       const txHash = await markUsedBatch(contractAddress, tokenIds);
-      console.log(
-        `Batch mark_used: ${tokenIds.length} tickets on ${contractAddress}, tx: ${txHash}`
+      logger.info(
+        { contractAddress, count: tokenIds.length, txHash },
+        "Batch mark_used completed"
       );
 
       // Update scan logs sync status
@@ -46,7 +48,7 @@ async function flushBatch(): Promise<void> {
         data: { syncStatus: "SYNCED" },
       });
     } catch (err) {
-      console.error(`Batch mark_used failed for ${contractAddress}:`, err);
+      logger.error({ err, contractAddress }, "Batch mark_used failed");
     }
   }
 }
@@ -89,7 +91,7 @@ const markUsedWorker = new Worker<MarkUsedJobData>(
 );
 
 markUsedWorker.on("failed", (job, err) => {
-  console.error(`markUsed job ${job?.id} failed:`, err.message);
+  logger.error({ jobId: job?.id, err: err.message }, "markUsed job failed");
 });
 
 export { markUsedWorker };

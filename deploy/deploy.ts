@@ -17,10 +17,14 @@ const __dirname = path.dirname(__filename);
 
 dotenv.config({ path: path.join(__dirname, "..", ".env") });
 
-const RPC_URL = process.env.STARKNET_RPC_URL || "http://127.0.0.1:5050";
-const DEPLOYER_PRIVATE_KEY = process.env.DEPLOYER_PRIVATE_KEY || "";
-const DEPLOYER_ADDRESS = process.env.DEPLOYER_ADDRESS || "";
+const RPC_URL = process.env.STARKNET_RPC_URL;
+const DEPLOYER_PRIVATE_KEY = process.env.DEPLOYER_PRIVATE_KEY;
+const DEPLOYER_ADDRESS = process.env.DEPLOYER_ADDRESS;
 const NETWORK = process.env.STARKNET_NETWORK || "devnet";
+
+if (!RPC_URL) throw new Error("STARKNET_RPC_URL env var is required");
+if (!DEPLOYER_PRIVATE_KEY) throw new Error("DEPLOYER_PRIVATE_KEY env var is required");
+if (!DEPLOYER_ADDRESS) throw new Error("DEPLOYER_ADDRESS env var is required");
 
 // STRK token address (same on Sepolia and devnet)
 const STRK_ADDRESS =
@@ -137,15 +141,16 @@ async function main() {
     "starknet_nft_ticketing_Paymaster",
     "Paymaster"
   );
-  // Paymaster constructor: owner, strk_token, max_gas_per_tx (u256), daily_limit (u256)
+  // Paymaster constructor: owner, strk_token, max_gas_per_tx (u256), max_txs_per_day (u64), min_interval (u64)
   const paymasterAddress = await deployContract(
     account,
     paymasterClassHash,
     [
       DEPLOYER_ADDRESS,        // owner
       STRK_ADDRESS,            // strk_token
-      "500000", "0",           // max_gas_per_tx u256
-      "50000000", "0",         // daily_limit u256
+      "500000", "0",           // max_gas_per_tx u256 (low, high)
+      "100",                   // max_txs_per_day u64
+      "60",                    // min_interval u64 (seconds)
     ],
     "Paymaster"
   );

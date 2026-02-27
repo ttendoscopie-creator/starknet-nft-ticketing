@@ -132,8 +132,11 @@ pub mod EventTicket {
         soulbound: bool,
         max_transfers: u32,
     ) {
+        assert(!organizer.is_zero(), 'INVALID_ORGANIZER');
+        assert(!marketplace.is_zero(), 'INVALID_MARKETPLACE');
         assert(royalty_bps <= 2000_u16, 'ROYALTY_MAX_20_PCT');
         assert(resale_cap_bps >= 10000_u16, 'CAP_MIN_100_PCT');
+        assert(resale_cap_bps <= 50000_u16, 'CAP_MAX_500_PCT');
         self.max_supply.write(max_supply);
         self.primary_price.write(primary_price);
         self.resale_cap_bps.write(resale_cap_bps);

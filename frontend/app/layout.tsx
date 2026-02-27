@@ -31,7 +31,7 @@ function AuthProvider({ children }: { children: ReactNode }) {
   const web3authRef = useRef<Web3Auth | null>(null);
 
   useEffect(() => {
-    const stored = localStorage.getItem("wallet_address");
+    const stored = sessionStorage.getItem("wallet_address");
     if (stored) setWalletAddress(stored);
 
     const privateKeyProvider = new CommonPrivateKeyProvider({ config: { chainConfig } });
@@ -68,7 +68,7 @@ function AuthProvider({ children }: { children: ReactNode }) {
       const address = starkKey.startsWith("0x") ? starkKey : "0x" + starkKey;
 
       setWalletAddress(address);
-      localStorage.setItem("wallet_address", address);
+      sessionStorage.setItem("wallet_address", address);
 
       try {
         const authInfo = await web3auth.authenticateUser();
@@ -107,7 +107,7 @@ function AuthProvider({ children }: { children: ReactNode }) {
 
     setWalletAddress(null);
     setToken(null);
-    localStorage.removeItem("wallet_address");
+    sessionStorage.removeItem("wallet_address");
   }, []);
 
   return (

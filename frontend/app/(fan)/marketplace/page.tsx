@@ -70,7 +70,7 @@ export default function MarketplacePage() {
         }
         await fetchListings();
       } catch (err) {
-        alert(err instanceof Error ? err.message : "Purchase failed");
+        setError(err instanceof Error ? err.message : "Purchase failed");
       } finally {
         setBuyingId(null);
       }

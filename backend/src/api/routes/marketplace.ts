@@ -58,19 +58,34 @@ export async function marketplaceRoutes(app: FastifyInstance): Promise<void> {
         return reply.code(400).send({ error: "Maximum transfer limit reached" });
       }
 
-      const [listing] = await prisma.$transaction([
-        prisma.listing.create({
-          data: {
-            ticketId,
-            sellerAddress: user.walletAddress,
-            price,
-          },
-        }),
-        prisma.ticket.update({
-          where: { id: ticketId },
-          data: { status: "LISTED" },
-        }),
-      ]);
+      let listing;
+      try {
+        listing = await prisma.$transaction(async (tx) => {
+          // Re-check status inside transaction to prevent race condition
+          const freshTicket = await tx.ticket.findUnique({ where: { id: ticketId } });
+          if (!freshTicket || freshTicket.status !== "AVAILABLE") {
+            throw new Error("TICKET_NOT_AVAILABLE");
+          }
+
+          const created = await tx.listing.create({
+            data: {
+              ticketId,
+              sellerAddress: user.walletAddress,
+              price,
+            },
+          });
+          await tx.ticket.update({
+            where: { id: ticketId },
+            data: { status: "LISTED" },
+          });
+          return created;
+        });
+      } catch (err) {
+        if (err instanceof Error && err.message === "TICKET_NOT_AVAILABLE") {
+          return reply.code(409).send({ error: "Ticket is no longer available" });
+        }
+        throw err;
+      }
 
       return reply.code(201).send(listing);
     }

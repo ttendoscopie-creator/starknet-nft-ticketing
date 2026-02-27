@@ -42,6 +42,7 @@ pub mod Marketplace {
         StoragePointerWriteAccess, ContractAddress, get_caller_address, IERC20Dispatcher,
         IERC20DispatcherTrait, IEventTicketExternalDispatcher, IEventTicketExternalDispatcherTrait,
     };
+    use core::num::traits::Zero;
 
     #[derive(Drop, Serde, starknet::Store)]
     struct Listing {
@@ -70,6 +71,10 @@ pub mod Marketplace {
         platform_fee_bps: u256,
         platform_treasury: ContractAddress,
     ) {
+        assert(!owner.is_zero(), 'INVALID_OWNER');
+        assert(!payment_token.is_zero(), 'INVALID_TOKEN');
+        assert(!platform_treasury.is_zero(), 'INVALID_TREASURY');
+        assert(platform_fee_bps <= 5000, 'FEE_TOO_HIGH');
         self.owner.write(owner);
         self.payment_token.write(payment_token);
         self.platform_fee_bps.write(platform_fee_bps);
@@ -137,7 +142,9 @@ pub mod Marketplace {
             let royalty_amount: u256 = royalty_amount_u128.into();
 
             let platform_fee = price * self.platform_fee_bps.read() / 10000;
-            let seller_amount = price - royalty_amount - platform_fee;
+            let total_deductions = royalty_amount + platform_fee;
+            assert(price >= total_deductions, 'FEES_EXCEED_PRICE');
+            let seller_amount = price - total_deductions;
 
             // EFFECTS — deactivate BEFORE any external call (CEI anti-reentrancy)
             self
@@ -148,9 +155,9 @@ pub mod Marketplace {
 
             // INTERACTIONS — payments first, NFT transfer last
             let erc20 = IERC20Dispatcher { contract_address: self.payment_token.read() };
-            erc20.transfer_from(buyer, royalty_recipient, royalty_amount);
-            erc20.transfer_from(buyer, self.platform_treasury.read(), platform_fee);
-            erc20.transfer_from(buyer, seller, seller_amount);
+            assert(erc20.transfer_from(buyer, royalty_recipient, royalty_amount), 'ROYALTY_TRANSFER_FAILED');
+            assert(erc20.transfer_from(buyer, self.platform_treasury.read(), platform_fee), 'FEE_TRANSFER_FAILED');
+            assert(erc20.transfer_from(buyer, seller, seller_amount), 'SELLER_TRANSFER_FAILED');
             ticket.transfer_ticket(seller, buyer, token_id, price_u128);
         }
     }

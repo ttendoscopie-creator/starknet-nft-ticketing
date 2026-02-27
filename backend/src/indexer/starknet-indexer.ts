@@ -1,6 +1,7 @@
 import { RpcProvider, num, events } from "starknet";
 import { PrismaClient } from "@prisma/client";
 import { setTicketCache, redis } from "../db/redis";
+import { logger } from "../config/logger";
 
 const prisma = new PrismaClient();
 const STARKNET_RPC_URL =
@@ -64,9 +65,9 @@ async function processTicketMinted(
       ownerAddress: toAddress,
     });
 
-    console.log(`Indexed: TicketMinted #${tokenId} to ${toAddress}`);
+    logger.info({ tokenId: tokenId.toString(), to: toAddress }, "Indexed TicketMinted");
   } catch (err) {
-    console.error("Failed to process TicketMinted:", err);
+    logger.error({ err, contractAddress }, "Failed to process TicketMinted");
   }
 }
 
@@ -102,9 +103,9 @@ async function processTicketTransferred(
       data: { isActive: false },
     });
 
-    console.log(`Indexed: TicketTransferred #${tokenId} to ${toAddress}`);
+    logger.info({ tokenId: tokenId.toString(), to: toAddress }, "Indexed TicketTransferred");
   } catch (err) {
-    console.error("Failed to process TicketTransferred:", err);
+    logger.error({ err, contractAddress }, "Failed to process TicketTransferred");
   }
 }
 
@@ -130,9 +131,9 @@ async function processTicketUsed(
       ownerAddress: ticket.ownerAddress,
     });
 
-    console.log(`Indexed: TicketUsed #${tokenId}`);
+    logger.info({ tokenId: tokenId.toString() }, "Indexed TicketUsed");
   } catch (err) {
-    console.error("Failed to process TicketUsed:", err);
+    logger.error({ err, contractAddress }, "Failed to process TicketUsed");
   }
 }
 
@@ -142,8 +143,9 @@ async function processEventCreated(eventData: string[]): Promise<void> {
   const contractAddress = num.toHex(eventData[2]);
   const organizer = num.toHex(eventData[3]);
 
-  console.log(
-    `Indexed: EventCreated #${eventIdLow} at ${contractAddress} by ${organizer}`
+  logger.info(
+    { eventId: eventIdLow.toString(), contractAddress, organizer },
+    "Indexed EventCreated"
   );
 }
 
@@ -155,7 +157,7 @@ async function pollEvents(): Promise<void> {
     const block = await provider.getBlockLatestAccepted();
     currentBlock = block.block_number;
   } catch (err) {
-    console.error("Failed to get latest block:", err);
+    logger.error({ err }, "Failed to get latest block");
     return;
   }
 
@@ -193,23 +195,23 @@ async function pollEvents(): Promise<void> {
           // In production, match against computed selectors
           if (data.length >= 3) {
             // Heuristic: process based on data shape
-            console.log(`Event from ${address}:`, evt.keys, data);
+            logger.debug({ address, keys: evt.keys, data }, "Event received");
           }
         }
       } catch (err) {
-        console.error(`Failed to get events for ${address}:`, err);
+        logger.error({ err, address }, "Failed to get events");
       }
     }
 
     await saveIndexerState({ lastIndexedBlock: toBlock });
-    console.log(`Indexed blocks ${fromBlock} to ${toBlock}`);
+    logger.info({ fromBlock, toBlock }, "Indexed blocks");
   } catch (err) {
-    console.error("Indexer error:", err);
+    logger.error({ err }, "Indexer error");
   }
 }
 
 async function startIndexer(): Promise<void> {
-  console.log("Starting Starknet indexer (polling mode)...");
+  logger.info("Starting Starknet indexer (polling mode)");
 
   // Continuous polling loop
   const poll = async () => {
@@ -221,6 +223,6 @@ async function startIndexer(): Promise<void> {
 }
 
 // Run if executed directly
-startIndexer().catch(console.error);
+startIndexer().catch((err) => logger.error({ err }, "Indexer startup failed"));
 
 export { startIndexer, pollEvents };

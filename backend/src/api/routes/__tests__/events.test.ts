@@ -11,6 +11,7 @@ const { mockPrisma } = vi.hoisted(() => ({
       create: vi.fn(),
       findMany: vi.fn(),
       findUnique: vi.fn(),
+      count: vi.fn(),
     },
   },
 }));
@@ -101,11 +102,12 @@ describe("POST /v1/events", () => {
 });
 
 describe("GET /v1/events", () => {
-  it("returns list of events", async () => {
+  it("returns paginated list of events", async () => {
     mockPrisma.event.findMany.mockResolvedValue([
       { id: "e1", name: "Event 1" },
       { id: "e2", name: "Event 2" },
     ]);
+    mockPrisma.event.count.mockResolvedValue(2);
 
     const token = makeOrganizerToken();
     const res = await app.inject({
@@ -114,7 +116,10 @@ describe("GET /v1/events", () => {
       headers: { authorization: `Bearer ${token}` },
     });
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toHaveLength(2);
+    expect(res.json().events).toHaveLength(2);
+    expect(res.json().total).toBe(2);
+    expect(res.json().skip).toBe(0);
+    expect(res.json().take).toBe(20);
   });
 });
 

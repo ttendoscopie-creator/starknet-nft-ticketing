@@ -4,8 +4,8 @@ import { PrismaClient } from "@prisma/client";
 import { Queue } from "bullmq";
 import { bullmqConnection } from "../../db/redis";
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || "");
-const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET || "";
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
+const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET!;
 const prisma = new PrismaClient();
 const mintQueue = new Queue("mint", { connection: bullmqConnection });
 
@@ -48,6 +48,15 @@ export async function webhookRoutes(app: FastifyInstance): Promise<void> {
       }
 
       try {
+        // Idempotent: skip if this payment intent was already processed
+        const existing = await prisma.pendingMint.findUnique({
+          where: { stripePaymentIntentId: session.payment_intent as string },
+        });
+        if (existing) {
+          app.log.info({ paymentIntent: session.payment_intent }, "Duplicate webhook, skipping");
+          return reply.code(200).send({ received: true });
+        }
+
         // Create pending mint record
         const pendingMint = await prisma.pendingMint.create({
           data: {

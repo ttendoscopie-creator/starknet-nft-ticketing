@@ -420,3 +420,74 @@ fn test_buy_listing_respects_transfer_limit() {
         Result::Err(err) => assert(*err.at(0) == 'MAX_TRANSFERS_REACHED', 'Wrong error code'),
     }
 }
+
+// ═══════════════════════════════════════════════════════
+// CONSTRUCTOR VALIDATION TESTS
+// ═══════════════════════════════════════════════════════
+
+// TEST 14: Constructor rejects zero owner
+#[test]
+fn test_marketplace_constructor_rejects_zero_owner() {
+    let mkt_class = declare("Marketplace").unwrap().contract_class();
+    let erc20 = contract_address_const::<'erc20'>();
+    let calldata = array![
+        0, // owner = zero
+        erc20.into(),
+        500, 0,
+        treasury().into()
+    ];
+    match mkt_class.deploy(@calldata) {
+        Result::Ok(_) => panic!("Should have failed with INVALID_OWNER"),
+        Result::Err(_) => (),
+    }
+}
+
+// TEST 15: Constructor rejects fee > 5000
+#[test]
+fn test_marketplace_constructor_rejects_fee_too_high() {
+    let mkt_class = declare("Marketplace").unwrap().contract_class();
+    let erc20 = contract_address_const::<'erc20'>();
+    let calldata = array![
+        owner().into(),
+        erc20.into(),
+        5001, 0, // fee_bps = 5001 (> 50%)
+        treasury().into()
+    ];
+    match mkt_class.deploy(@calldata) {
+        Result::Ok(_) => panic!("Should have failed with FEE_TOO_HIGH"),
+        Result::Err(_) => (),
+    }
+}
+
+// TEST 16: Constructor rejects zero payment_token
+#[test]
+fn test_marketplace_constructor_rejects_zero_token() {
+    let mkt_class = declare("Marketplace").unwrap().contract_class();
+    let calldata = array![
+        owner().into(),
+        0, // payment_token = zero
+        500, 0,
+        treasury().into()
+    ];
+    match mkt_class.deploy(@calldata) {
+        Result::Ok(_) => panic!("Should have failed with INVALID_TOKEN"),
+        Result::Err(_) => (),
+    }
+}
+
+// TEST 17: Constructor rejects zero treasury
+#[test]
+fn test_marketplace_constructor_rejects_zero_treasury() {
+    let mkt_class = declare("Marketplace").unwrap().contract_class();
+    let erc20 = contract_address_const::<'erc20'>();
+    let calldata = array![
+        owner().into(),
+        erc20.into(),
+        500, 0,
+        0 // treasury = zero
+    ];
+    match mkt_class.deploy(@calldata) {
+        Result::Ok(_) => panic!("Should have failed with INVALID_TREASURY"),
+        Result::Err(_) => (),
+    }
+}

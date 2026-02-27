@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import QRCode from "qrcode";
 
-const QR_SIGNING_PRIVATE_KEY = process.env.QR_SIGNING_PRIVATE_KEY || "";
+const QR_SIGNING_PRIVATE_KEY = process.env.QR_SIGNING_PRIVATE_KEY!;
 
 export interface QRPayload {
   ticket_id: string;

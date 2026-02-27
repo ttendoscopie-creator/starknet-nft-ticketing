@@ -19,6 +19,7 @@ pub trait ITicketFactory<TContractState> {
     ) -> ContractAddress;
     fn get_event_contract(self: @TContractState, event_id: u256) -> ContractAddress;
     fn get_event_count(self: @TContractState) -> u256;
+    fn update_ticket_class_hash(ref self: TContractState, new_hash: ClassHash);
 }
 
 #[starknet::contract]
@@ -28,6 +29,7 @@ pub mod TicketFactory {
         StoragePointerWriteAccess, ClassHash, ContractAddress, get_caller_address, deploy_syscall,
         SyscallResultTrait,
     };
+    use core::num::traits::Zero;
 
     #[storage]
     struct Storage {
@@ -52,6 +54,8 @@ pub mod TicketFactory {
 
     #[constructor]
     fn constructor(ref self: ContractState, ticket_class_hash: ClassHash, owner: ContractAddress) {
+        assert(!ticket_class_hash.is_zero(), 'INVALID_CLASS_HASH');
+        assert(!owner.is_zero(), 'INVALID_OWNER');
         self.ticket_class_hash.write(ticket_class_hash);
         self.owner.write(owner);
     }
@@ -105,6 +109,12 @@ pub mod TicketFactory {
 
         fn get_event_count(self: @ContractState) -> u256 {
             self.event_count.read()
+        }
+
+        fn update_ticket_class_hash(ref self: ContractState, new_hash: ClassHash) {
+            assert(get_caller_address() == self.owner.read(), 'NOT_OWNER');
+            assert(!new_hash.is_zero(), 'INVALID_CLASS_HASH');
+            self.ticket_class_hash.write(new_hash);
         }
     }
 }

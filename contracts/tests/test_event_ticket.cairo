@@ -425,3 +425,87 @@ fn test_unlimited_transfers_when_zero() {
     // transfer_count stays 0 when max_transfers=0 (no tracking needed)
     assert_eq!(dispatcher.get_transfer_count(1_u256), 0_u32);
 }
+
+// ═══════════════════════════════════════════════════════
+// CONSTRUCTOR VALIDATION TESTS
+// ═══════════════════════════════════════════════════════
+
+// TEST 22: Constructor rejects zero organizer
+#[test]
+fn test_constructor_rejects_zero_organizer() {
+    let contract = declare("EventTicket").unwrap().contract_class();
+    let calldata = array![
+        100, 1000000, 11000, 1000,
+        0, // organizer = zero
+        marketplace().into(),
+        0, 0
+    ];
+    match contract.deploy(@calldata) {
+        Result::Ok(_) => panic!("Should have failed with INVALID_ORGANIZER"),
+        Result::Err(_) => (),
+    }
+}
+
+// TEST 23: Constructor rejects zero marketplace
+#[test]
+fn test_constructor_rejects_zero_marketplace() {
+    let contract = declare("EventTicket").unwrap().contract_class();
+    let calldata = array![
+        100, 1000000, 11000, 1000,
+        organizer().into(),
+        0, // marketplace = zero
+        0, 0
+    ];
+    match contract.deploy(@calldata) {
+        Result::Ok(_) => panic!("Should have failed with INVALID_MARKETPLACE"),
+        Result::Err(_) => (),
+    }
+}
+
+// TEST 24: Constructor rejects resale_cap > 50000
+#[test]
+fn test_constructor_rejects_cap_too_high() {
+    let contract = declare("EventTicket").unwrap().contract_class();
+    let calldata = array![
+        100, 1000000, 50001, 1000, // resale_cap_bps = 50001 (> 500%)
+        organizer().into(),
+        marketplace().into(),
+        0, 0
+    ];
+    match contract.deploy(@calldata) {
+        Result::Ok(_) => panic!("Should have failed with CAP_MAX_500_PCT"),
+        Result::Err(_) => (),
+    }
+}
+
+// TEST 25: Constructor rejects resale_cap < 10000
+#[test]
+fn test_constructor_rejects_cap_too_low() {
+    let contract = declare("EventTicket").unwrap().contract_class();
+    let calldata = array![
+        100, 1000000, 9999, 1000, // resale_cap_bps = 9999 (< 100%)
+        organizer().into(),
+        marketplace().into(),
+        0, 0
+    ];
+    match contract.deploy(@calldata) {
+        Result::Ok(_) => panic!("Should have failed with CAP_MIN_100_PCT"),
+        Result::Err(_) => (),
+    }
+}
+
+// TEST 26: Constructor rejects royalty_bps > 2000
+#[test]
+fn test_constructor_rejects_royalty_too_high() {
+    let contract = declare("EventTicket").unwrap().contract_class();
+    let calldata = array![
+        100, 1000000, 11000, 2001, // royalty_bps = 2001 (> 20%)
+        organizer().into(),
+        marketplace().into(),
+        0, 0
+    ];
+    match contract.deploy(@calldata) {
+        Result::Ok(_) => panic!("Should have failed with ROYALTY_MAX_20_PCT"),
+        Result::Err(_) => (),
+    }
+}

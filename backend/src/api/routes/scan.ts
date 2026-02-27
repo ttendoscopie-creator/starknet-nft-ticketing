@@ -12,7 +12,7 @@ const ScanValidateSchema = z.object({
   ticket_id: z.string().uuid(),
   signature: z.string().min(1),
   timestamp: z.number().int().positive(),
-  gate_id: z.string().optional(),
+  gate_id: z.string().regex(/^[a-zA-Z0-9_-]{1,100}$/).optional(),
 });
 
 export async function scanRoutes(app: FastifyInstance): Promise<void> {

@@ -99,7 +99,7 @@ model PendingMint {
   buyerWalletAddress    String?
   status                String   @default("PENDING")
   txHash                String?
-  cryptoTxHash          String?
+  cryptoTxHash          String?  @unique
   paymentAmount         BigInt?
   paymentCurrency       String?
   createdAt             DateTime @default(now())

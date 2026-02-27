@@ -1,7 +1,7 @@
 import { FastifyRequest, FastifyReply } from "fastify";
 import jwt from "jsonwebtoken";
 
-const JWT_SECRET = process.env.JWT_SECRET || "change-me-in-production-min-32-chars";
+const JWT_SECRET = process.env.JWT_SECRET!;
 
 export interface JWTPayload {
   userId: string;

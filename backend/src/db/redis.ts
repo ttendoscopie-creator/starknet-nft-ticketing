@@ -1,4 +1,5 @@
 import IORedis from "ioredis";
+import { logger } from "../config/logger";
 
 const REDIS_URL = process.env.REDIS_URL || "redis://localhost:6379";
 
@@ -17,7 +18,7 @@ export const redis = new IORedis(REDIS_URL, {
 });
 
 redis.on("error", (err: Error) => {
-  console.error("Redis connection error:", err.message);
+  logger.error({ err: err.message }, "Redis connection error");
 });
 
 export async function getTicketCache(

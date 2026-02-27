@@ -20,9 +20,17 @@ from starknet_py.common import create_compiled_contract
 
 load_dotenv()
 
-RPC_URL = os.getenv("STARKNET_RPC_URL", "https://starknet-sepolia.public.blastapi.io")
-DEPLOYER_PRIVATE_KEY = int(os.getenv("DEPLOYER_PRIVATE_KEY", "0x0"), 16)
-DEPLOYER_ADDRESS = int(os.getenv("DEPLOYER_ADDRESS", "0x0"), 16)
+
+def require_env(name: str) -> str:
+    value = os.getenv(name)
+    if not value:
+        raise SystemExit(f"ERROR: Missing required env var: {name}")
+    return value
+
+
+RPC_URL = require_env("STARKNET_RPC_URL")
+DEPLOYER_PRIVATE_KEY = int(require_env("DEPLOYER_PRIVATE_KEY"), 16)
+DEPLOYER_ADDRESS = int(require_env("DEPLOYER_ADDRESS"), 16)
 NETWORK = os.getenv("STARKNET_NETWORK", "sepolia")
 
 # STRK token on Sepolia
@@ -175,4 +183,11 @@ def read_contract(name: str) -> dict:
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except FileNotFoundError as e:
+        print(f"ERROR: {e}", file=__import__("sys").stderr)
+        raise SystemExit(1)
+    except Exception as e:
+        print(f"ERROR: Deployment failed: {e}", file=__import__("sys").stderr)
+        raise SystemExit(1)

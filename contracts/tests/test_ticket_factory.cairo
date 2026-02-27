@@ -1,12 +1,14 @@
 use snforge_std::{
     declare, ContractClassTrait, DeclareResultTrait, start_cheat_caller_address,
-    stop_cheat_caller_address, spy_events, EventSpyAssertionsTrait,
+    stop_cheat_caller_address, cheat_caller_address, CheatSpan, spy_events,
+    EventSpyAssertionsTrait,
 };
-use starknet::{ContractAddress, contract_address_const};
+use starknet::{ContractAddress, contract_address_const, ClassHash};
 use core::num::traits::Zero;
 
 use starknet_nft_ticketing::TicketFactory::{
-    ITicketFactoryDispatcher, ITicketFactoryDispatcherTrait,
+    ITicketFactoryDispatcher, ITicketFactoryDispatcherTrait, ITicketFactorySafeDispatcher,
+    ITicketFactorySafeDispatcherTrait,
 };
 use starknet_nft_ticketing::EventTicket::{IEventTicketDispatcher, IEventTicketDispatcherTrait};
 
@@ -147,4 +149,53 @@ fn test_create_event_with_transfer_limit() {
     let ticket = IEventTicketDispatcher { contract_address: event_addr };
     assert_eq!(ticket.is_soulbound(), false);
     assert_eq!(ticket.get_max_transfers(), 3_u32);
+}
+
+// ═══════════════════════════════════════════════════════
+// NEW TESTS: update_ticket_class_hash
+// ═══════════════════════════════════════════════════════
+
+// TEST 8: update_ticket_class_hash success by owner
+#[test]
+fn test_update_ticket_class_hash_success() {
+    let factory = deploy_factory();
+    // Declare Marketplace as a different class hash to use
+    let new_class = declare("Marketplace").unwrap().contract_class();
+    let new_hash: ClassHash = *new_class.class_hash;
+
+    start_cheat_caller_address(factory.contract_address, owner());
+    factory.update_ticket_class_hash(new_hash);
+    stop_cheat_caller_address(factory.contract_address);
+    // No revert means success
+}
+
+// TEST 9: update_ticket_class_hash by non-owner -> NOT_OWNER
+#[test]
+#[feature("safe_dispatcher")]
+fn test_update_ticket_class_hash_not_owner_fails() {
+    let factory = deploy_factory();
+    let safe = ITicketFactorySafeDispatcher { contract_address: factory.contract_address };
+    let new_class = declare("Marketplace").unwrap().contract_class();
+    let new_hash: ClassHash = *new_class.class_hash;
+
+    cheat_caller_address(safe.contract_address, organizer(), CheatSpan::TargetCalls(1));
+    match safe.update_ticket_class_hash(new_hash) {
+        Result::Ok(_) => panic!("Should have failed with NOT_OWNER"),
+        Result::Err(err) => assert(*err.at(0) == 'NOT_OWNER', 'Wrong error code'),
+    }
+}
+
+// TEST 10: update_ticket_class_hash with zero hash -> INVALID_CLASS_HASH
+#[test]
+#[feature("safe_dispatcher")]
+fn test_update_ticket_class_hash_zero_fails() {
+    let factory = deploy_factory();
+    let safe = ITicketFactorySafeDispatcher { contract_address: factory.contract_address };
+    let zero_hash: ClassHash = Zero::zero();
+
+    cheat_caller_address(safe.contract_address, owner(), CheatSpan::TargetCalls(1));
+    match safe.update_ticket_class_hash(zero_hash) {
+        Result::Ok(_) => panic!("Should have failed with INVALID_CLASS_HASH"),
+        Result::Err(err) => assert(*err.at(0) == 'INVALID_CLASS_HASH', 'Wrong error code'),
+    }
 }

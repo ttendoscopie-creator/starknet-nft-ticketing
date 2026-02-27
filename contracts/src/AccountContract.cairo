@@ -99,6 +99,8 @@ pub mod AccountContract {
         recovery_delay: u64,
     ) {
         assert(!owner_pubkey.is_zero(), 'INVALID_PUBKEY');
+        assert(!guardian.is_zero(), 'INVALID_GUARDIAN');
+        assert(recovery_delay > 0, 'DELAY_MUST_BE_POSITIVE');
         self.owner_pubkey.write(owner_pubkey);
         self.guardian.write(guardian);
         self.recovery_delay.write(recovery_delay);
@@ -179,6 +181,7 @@ pub mod AccountContract {
             let caller = get_caller_address();
             assert(caller == self.guardian.read(), 'NOT_GUARDIAN');
             assert(!new_owner_pubkey.is_zero(), 'INVALID_PUBKEY');
+            assert(self.pending_new_owner.read().is_zero(), 'RECOVERY_ALREADY_PENDING');
             let now = get_block_timestamp();
             self.pending_new_owner.write(new_owner_pubkey);
             self.recovery_initiated_at.write(now);
@@ -207,6 +210,7 @@ pub mod AccountContract {
             // Revoke session key
             self.session_pubkey.write(0);
             self.session_expiry.write(0);
+            self.session_scope.write(0);
             self.emit(Event::RecoveryExecuted(RecoveryExecuted { new_owner_pubkey: pending }));
         }
 

@@ -2,6 +2,7 @@ import { Worker, Job } from "bullmq";
 import { PrismaClient } from "@prisma/client";
 import { mintTicket } from "../services/starknet.service";
 import { setTicketCache, bullmqConnection } from "../db/redis";
+import { logger } from "../config/logger";
 
 const prisma = new PrismaClient();
 
@@ -30,6 +31,14 @@ const mintWorker = new Worker<MintJobData>(
     });
     if (!event) {
       throw new Error(`Event ${eventId} not found`);
+    }
+
+    if (event._count.tickets >= event.maxSupply) {
+      await prisma.pendingMint.update({
+        where: { id: pendingMintId },
+        data: { status: "FAILED" },
+      });
+      throw new Error(`Event ${eventId} max supply (${event.maxSupply}) reached`);
     }
 
     const tokenId = BigInt(event._count.tickets + 1);
@@ -63,7 +72,7 @@ const mintWorker = new Worker<MintJobData>(
         ownerName: buyerEmail,
       });
 
-      console.log(`Minted ticket ${ticket.id} (token ${tokenId}) for ${buyerEmail}`);
+      logger.info({ ticketId: ticket.id, tokenId: tokenId.toString(), buyerEmail }, "Minted ticket");
     } catch (err) {
       await prisma.pendingMint.update({
         where: { id: pendingMintId },
@@ -80,11 +89,11 @@ const mintWorker = new Worker<MintJobData>(
 );
 
 mintWorker.on("failed", (job, err) => {
-  console.error(`Mint job ${job?.id} failed:`, err.message);
+  logger.error({ jobId: job?.id, err: err.message }, "Mint job failed");
 });
 
 mintWorker.on("completed", (job) => {
-  console.log(`Mint job ${job.id} completed`);
+  logger.info({ jobId: job.id }, "Mint job completed");
 });
 
 export { mintWorker };

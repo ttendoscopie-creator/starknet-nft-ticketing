@@ -20,3 +20,4 @@ contracts/.snfoundry_cache/
 
 # Deploy artifacts
 deploy/deployments.json
+deploy/devnet_accounts.json

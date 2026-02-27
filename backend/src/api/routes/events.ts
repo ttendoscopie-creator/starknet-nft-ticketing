@@ -63,12 +63,21 @@ export async function eventRoutes(app: FastifyInstance): Promise<void> {
     }
   );
 
-  app.get("/v1/events", async (_request, reply) => {
-    const events = await prisma.event.findMany({
-      orderBy: { eventDate: "asc" },
-      include: { _count: { select: { tickets: true } } },
-    });
-    return reply.send(events);
+  app.get("/v1/events", async (request, reply) => {
+    const query = request.query as { skip?: string; take?: string };
+    const skip = Math.max(0, Number(query.skip) || 0);
+    const take = Math.min(Math.max(1, Number(query.take) || 20), 100);
+
+    const [events, total] = await Promise.all([
+      prisma.event.findMany({
+        skip,
+        take,
+        orderBy: { eventDate: "asc" },
+        include: { _count: { select: { tickets: true } } },
+      }),
+      prisma.event.count(),
+    ]);
+    return reply.send({ events, total, skip, take });
   });
 
   app.get("/v1/events/:id", async (request, reply) => {

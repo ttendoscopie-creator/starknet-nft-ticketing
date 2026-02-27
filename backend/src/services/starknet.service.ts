@@ -2,8 +2,8 @@ import { RpcProvider, Account, Contract, CallData, num } from "starknet";
 
 const STARKNET_RPC_URL =
   process.env.STARKNET_RPC_URL || "https://starknet-sepolia.public.blastapi.io";
-const DEPLOYER_PRIVATE_KEY = process.env.DEPLOYER_PRIVATE_KEY || "";
-const DEPLOYER_ADDRESS = process.env.DEPLOYER_ADDRESS || "";
+const DEPLOYER_PRIVATE_KEY = process.env.DEPLOYER_PRIVATE_KEY!;
+const DEPLOYER_ADDRESS = process.env.DEPLOYER_ADDRESS!;
 
 const provider = new RpcProvider({ nodeUrl: STARKNET_RPC_URL });
 const account = new Account(provider, DEPLOYER_ADDRESS, DEPLOYER_PRIVATE_KEY);

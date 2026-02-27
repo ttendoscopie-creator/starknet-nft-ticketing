@@ -130,6 +130,10 @@ pub mod Paymaster {
         max_txs_per_day: u64,
         min_interval: u64,
     ) {
+        assert(!owner.is_zero(), 'INVALID_OWNER');
+        assert(!strk_token.is_zero(), 'INVALID_TOKEN');
+        assert(max_gas_per_tx > 0, 'MAX_GAS_MUST_BE_POSITIVE');
+        assert(max_txs_per_day > 0, 'MAX_TXS_MUST_BE_POSITIVE');
         self.owner.write(owner);
         self.strk_token.write(strk_token);
         self.max_gas_per_tx.write(max_gas_per_tx);
@@ -168,8 +172,9 @@ pub mod Paymaster {
 
         fn withdraw(ref self: ContractState, amount: u256) {
             assert(get_caller_address() == self.owner.read(), 'NOT_OWNER');
+            assert(amount > 0, 'ZERO_AMOUNT');
             let strk = IERC20Dispatcher { contract_address: self.strk_token.read() };
-            strk.transfer(self.owner.read(), amount);
+            assert(strk.transfer(self.owner.read(), amount), 'TRANSFER_FAILED');
         }
 
         fn top_up_organizer(ref self: ContractState, amount: u256) {

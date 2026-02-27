@@ -160,6 +160,26 @@ describe("POST /v1/marketplace/listings", () => {
     expect(res.json().error).toBe("Maximum transfer limit reached");
   });
 
+  it("returns 409 when ticket is no longer available (race condition)", async () => {
+    mockPrisma.ticket.findUnique.mockResolvedValue({
+      id: "t1",
+      ownerAddress: "0xfan",
+      status: "AVAILABLE",
+      transferCount: 0,
+      event: { isSoulbound: false, maxTransfers: 0 },
+    });
+    mockPrisma.$transaction.mockRejectedValue(new Error("TICKET_NOT_AVAILABLE"));
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/v1/marketplace/listings",
+      payload: { ticketId: "550e8400-e29b-41d4-a716-446655440000", price: 100 },
+      headers: { authorization: `Bearer ${fanToken}` },
+    });
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error).toBe("Ticket is no longer available");
+  });
+
   it("returns 201 and creates listing via transaction", async () => {
     mockPrisma.ticket.findUnique.mockResolvedValue({
       id: "t1",
@@ -168,10 +188,24 @@ describe("POST /v1/marketplace/listings", () => {
       transferCount: 0,
       event: { isSoulbound: false, maxTransfers: 0 },
     });
-    mockPrisma.$transaction.mockResolvedValue([
-      { id: "l1", ticketId: "t1", sellerAddress: "0xfan", price: 100 },
-      { id: "t1", status: "LISTED" },
-    ]);
+    // Interactive transaction: mock calls the callback with a tx proxy
+    mockPrisma.$transaction.mockImplementation(async (fn: Function) => {
+      const txProxy = {
+        ticket: {
+          findUnique: vi.fn().mockResolvedValue({ id: "t1", status: "AVAILABLE" }),
+          update: vi.fn().mockResolvedValue({ id: "t1", status: "LISTED" }),
+        },
+        listing: {
+          create: vi.fn().mockResolvedValue({
+            id: "l1",
+            ticketId: "t1",
+            sellerAddress: "0xfan",
+            price: 100,
+          }),
+        },
+      };
+      return fn(txProxy);
+    });
 
     const res = await app.inject({
       method: "POST",

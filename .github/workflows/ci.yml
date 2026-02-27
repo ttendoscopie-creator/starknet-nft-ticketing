@@ -52,6 +52,9 @@ jobs:
         working-directory: backend
       - run: npx prisma generate --schema=src/db/prisma/schema.prisma
         working-directory: backend
+      - name: Security audit
+        run: npm audit --audit-level=high --omit=dev
+        working-directory: backend
       - run: npx tsc --noEmit
         working-directory: backend
       - run: npm test -- --run
@@ -71,6 +74,10 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+        working-directory: frontend
+
+      - name: Security audit
+        run: npm audit --audit-level=high --omit=dev
         working-directory: frontend
 
       - name: Type check

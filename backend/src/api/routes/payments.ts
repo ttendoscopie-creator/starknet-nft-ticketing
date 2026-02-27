@@ -14,8 +14,8 @@ const TOKEN_ADDRESSES: Record<string, string> = {
 
 const VerifyCryptoPaymentSchema = z.object({
   eventId: z.string().uuid(),
-  txHash: z.string().regex(/^0x[0-9a-fA-F]+$/),
-  buyerWalletAddress: z.string(),
+  txHash: z.string().regex(/^0x[0-9a-fA-F]{64}$/, "Invalid Starknet tx hash"),
+  buyerWalletAddress: z.string().regex(/^0x[0-9a-fA-F]{63,64}$/, "Invalid Starknet address"),
   currency: z.enum(["STRK", "USDC", "USDT"]),
 });
 
@@ -39,6 +39,14 @@ export async function paymentRoutes(app: FastifyInstance): Promise<void> {
 
     if (!event.acceptedCurrencies.includes(currency)) {
       return reply.code(400).send({ error: `Event does not accept ${currency}` });
+    }
+
+    // Prevent tx hash replay
+    const existingMint = await prisma.pendingMint.findFirst({
+      where: { cryptoTxHash: txHash },
+    });
+    if (existingMint) {
+      return reply.code(409).send({ error: "Transaction already used for a previous payment" });
     }
 
     // Verify the on-chain transfer
