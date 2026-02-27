@@ -2,6 +2,7 @@ import { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { PrismaClient } from "@prisma/client";
 import { authMiddleware, JWTPayload } from "../middleware/auth";
+import { createListingRateLimit } from "../middleware/rateLimit";
 
 const prisma = new PrismaClient();
 
@@ -11,24 +12,33 @@ const CreateListingSchema = z.object({
 });
 
 export async function marketplaceRoutes(app: FastifyInstance): Promise<void> {
-  // Get active listings (public)
-  app.get("/v1/marketplace/listings", async (_request, reply) => {
-    const listings = await prisma.listing.findMany({
-      where: { isActive: true },
-      include: {
-        ticket: {
-          include: { event: { select: { name: true, eventDate: true } } },
+  // Get active listings (public, paginated)
+  app.get("/v1/marketplace/listings", async (request, reply) => {
+    const query = request.query as { skip?: string; take?: string };
+    const skip = Math.max(0, Number(query.skip) || 0);
+    const take = Math.min(Math.max(1, Number(query.take) || 20), 100);
+
+    const [listings, total] = await Promise.all([
+      prisma.listing.findMany({
+        where: { isActive: true },
+        include: {
+          ticket: {
+            include: { event: { select: { name: true, eventDate: true } } },
+          },
         },
-      },
-      orderBy: { createdAt: "desc" },
-    });
-    return reply.send(listings);
+        orderBy: { createdAt: "desc" },
+        skip,
+        take,
+      }),
+      prisma.listing.count({ where: { isActive: true } }),
+    ]);
+    return reply.send({ listings, total, skip, take });
   });
 
   // Create a listing (authenticated)
   app.post(
     "/v1/marketplace/listings",
-    { preHandler: authMiddleware },
+    { preHandler: authMiddleware, ...createListingRateLimit },
     async (request, reply) => {
       const parseResult = CreateListingSchema.safeParse(request.body);
       if (!parseResult.success) {

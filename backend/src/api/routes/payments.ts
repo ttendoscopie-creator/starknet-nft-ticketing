@@ -3,6 +3,7 @@ import { z } from "zod";
 import { PrismaClient } from "@prisma/client";
 import { authMiddleware, JWTPayload } from "../middleware/auth";
 import { verifyERC20Transfer } from "../../services/starknet.service";
+import { paymentRateLimit } from "../middleware/rateLimit";
 
 const prisma = new PrismaClient();
 
@@ -22,7 +23,7 @@ const VerifyCryptoPaymentSchema = z.object({
 export async function paymentRoutes(app: FastifyInstance): Promise<void> {
   app.addHook("onRequest", authMiddleware);
 
-  app.post("/v1/payments/verify-crypto", async (request, reply) => {
+  app.post("/v1/payments/verify-crypto", { ...paymentRateLimit }, async (request, reply) => {
     const parseResult = VerifyCryptoPaymentSchema.safeParse(request.body);
     if (!parseResult.success) {
       return reply.code(400).send({ error: "Invalid input", details: parseResult.error.issues });

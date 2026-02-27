@@ -6,8 +6,15 @@ import { verifyQRSignature, isTimestampValid } from "../../services/qr.service";
 import { Queue } from "bullmq";
 import { bullmqConnection } from "../../db/redis";
 import { authMiddleware, staffOnly } from "../middleware/auth";
+import { scanRateLimit } from "../middleware/rateLimit";
 
-const markUsedQueue = new Queue("markUsed", { connection: bullmqConnection });
+const markUsedQueue = new Queue("markUsed", {
+  connection: bullmqConnection,
+  defaultJobOptions: {
+    attempts: 5,
+    backoff: { type: "exponential", delay: 2000 },
+  },
+});
 
 const ScanValidateSchema = z.object({
   ticket_id: z.string().uuid(),
@@ -17,7 +24,7 @@ const ScanValidateSchema = z.object({
 });
 
 export async function scanRoutes(app: FastifyInstance): Promise<void> {
-  app.post("/v1/scan/validate", { preHandler: [authMiddleware, staffOnly] }, async (request, reply) => {
+  app.post("/v1/scan/validate", { preHandler: [authMiddleware, staffOnly], ...scanRateLimit }, async (request, reply) => {
     const parseResult = ScanValidateSchema.safeParse(request.body);
     if (!parseResult.success) {
       return reply

@@ -11,6 +11,7 @@ const { mockPrisma } = vi.hoisted(() => ({
       findUnique: vi.fn(),
       create: vi.fn(),
       update: vi.fn(),
+      count: vi.fn(),
     },
     ticket: {
       findUnique: vi.fn(),
@@ -40,17 +41,37 @@ beforeEach(() => {
 });
 
 describe("GET /v1/marketplace/listings", () => {
-  it("returns active listings without auth (public)", async () => {
+  it("returns paginated active listings without auth (public)", async () => {
     mockPrisma.listing.findMany.mockResolvedValue([
       { id: "l1", price: "100", isActive: true },
     ]);
+    mockPrisma.listing.count.mockResolvedValue(1);
 
     const res = await app.inject({
       method: "GET",
       url: "/v1/marketplace/listings",
     });
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toHaveLength(1);
+    const body = res.json();
+    expect(body.listings).toHaveLength(1);
+    expect(body.total).toBe(1);
+    expect(body.skip).toBe(0);
+    expect(body.take).toBe(20);
+  });
+
+  it("respects skip and take query params", async () => {
+    mockPrisma.listing.findMany.mockResolvedValue([]);
+    mockPrisma.listing.count.mockResolvedValue(50);
+
+    const res = await app.inject({
+      method: "GET",
+      url: "/v1/marketplace/listings?skip=10&take=5",
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.skip).toBe(10);
+    expect(body.take).toBe(5);
+    expect(body.total).toBe(50);
   });
 });
 

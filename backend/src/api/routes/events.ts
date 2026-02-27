@@ -4,6 +4,7 @@ import { PrismaClient } from "@prisma/client";
 import { authMiddleware, organizerOnly, JWTPayload } from "../middleware/auth";
 import { deployEventContract } from "../../services/starknet.service";
 import { logger } from "../../config/logger";
+import { createEventRateLimit } from "../middleware/rateLimit";
 
 const prisma = new PrismaClient();
 
@@ -28,7 +29,7 @@ export async function eventRoutes(app: FastifyInstance): Promise<void> {
 
   app.post(
     "/v1/events",
-    { preHandler: organizerOnly },
+    { preHandler: organizerOnly, ...createEventRateLimit },
     async (request, reply) => {
       const parseResult = CreateEventSchema.safeParse(request.body);
       if (!parseResult.success) {

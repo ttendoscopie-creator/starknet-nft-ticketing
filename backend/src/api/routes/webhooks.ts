@@ -3,11 +3,18 @@ import Stripe from "stripe";
 import { PrismaClient } from "@prisma/client";
 import { Queue } from "bullmq";
 import { bullmqConnection } from "../../db/redis";
+import { webhookRateLimit } from "../middleware/rateLimit";
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
 const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET!;
 const prisma = new PrismaClient();
-const mintQueue = new Queue("mint", { connection: bullmqConnection });
+const mintQueue = new Queue("mint", {
+  connection: bullmqConnection,
+  defaultJobOptions: {
+    attempts: 5,
+    backoff: { type: "exponential", delay: 2000 },
+  },
+});
 
 export async function webhookRoutes(app: FastifyInstance): Promise<void> {
   // Raw body needed for Stripe signature verification
@@ -19,7 +26,7 @@ export async function webhookRoutes(app: FastifyInstance): Promise<void> {
     }
   );
 
-  app.post("/v1/webhooks/stripe", async (request, reply) => {
+  app.post("/v1/webhooks/stripe", { ...webhookRateLimit }, async (request, reply) => {
     const sig = request.headers["stripe-signature"];
     if (!sig) {
       return reply.code(400).send({ error: "Missing stripe-signature header" });
