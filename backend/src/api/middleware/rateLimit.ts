@@ -56,3 +56,21 @@ export const createListingRateLimit = {
     },
   },
 };
+
+export const bridgeWebhookRateLimit = {
+  config: {
+    rateLimit: {
+      max: 100,
+      timeWindow: "1 minute",
+    },
+  },
+};
+
+export const bridgeClaimRateLimit = {
+  config: {
+    rateLimit: {
+      max: 10,
+      timeWindow: "1 minute",
+    },
+  },
+};

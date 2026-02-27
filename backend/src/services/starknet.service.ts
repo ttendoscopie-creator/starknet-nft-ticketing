@@ -348,4 +348,68 @@ export async function getERC20Balance(
   });
 }
 
+// --- Bridge: transfer, marketplace whitelist ---
+
+export async function transferTicket(
+  contractAddress: string,
+  fromAddress: string,
+  toAddress: string,
+  tokenId: bigint,
+  salePrice: bigint = 0n
+): Promise<string> {
+  return withRetry(async () => {
+    const result = await account.execute({
+      contractAddress,
+      entrypoint: "transfer_ticket",
+      calldata: CallData.compile({
+        from: fromAddress,
+        to: toAddress,
+        token_id: { low: tokenId & BigInt("0xFFFFFFFFFFFFFFFF"), high: tokenId >> 128n },
+        sale_price: salePrice,
+      }),
+    });
+    await withTimeout(
+      provider.waitForTransaction(result.transaction_hash),
+      TX_TIMEOUT_MS
+    );
+    return result.transaction_hash;
+  });
+}
+
+export async function addMarketplace(
+  contractAddress: string,
+  marketplaceAddress: string
+): Promise<string> {
+  return withRetry(async () => {
+    const result = await account.execute({
+      contractAddress,
+      entrypoint: "add_marketplace",
+      calldata: CallData.compile({
+        marketplace: marketplaceAddress,
+      }),
+    });
+    await withTimeout(
+      provider.waitForTransaction(result.transaction_hash),
+      TX_TIMEOUT_MS
+    );
+    return result.transaction_hash;
+  });
+}
+
+export async function isMarketplaceAllowed(
+  contractAddress: string,
+  marketplaceAddress: string
+): Promise<boolean> {
+  return withRetry(async () => {
+    const result = await provider.callContract({
+      contractAddress,
+      entrypoint: "is_marketplace_allowed",
+      calldata: CallData.compile({
+        marketplace: marketplaceAddress,
+      }),
+    });
+    return result[0] !== "0x0";
+  });
+}
+
 export { provider, account };

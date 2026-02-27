@@ -12,6 +12,7 @@ import { eventRoutes } from "./routes/events";
 import { ticketRoutes } from "./routes/tickets";
 import { marketplaceRoutes } from "./routes/marketplace";
 import { paymentRoutes } from "./routes/payments";
+import { bridgeRoutes } from "./routes/bridge";
 
 const PORT = Number(process.env.PORT) || 3001;
 const HOST = process.env.HOST || "0.0.0.0";
@@ -79,8 +80,9 @@ async function buildApp() {
     }
   });
 
-  // Routes — webhooks registered first (needs raw body parser)
+  // Routes — webhooks/bridge registered first (need raw body parser)
   await app.register(webhookRoutes);
+  await app.register(bridgeRoutes);
   await app.register(scanRoutes);
   await app.register(eventRoutes);
   await app.register(ticketRoutes);

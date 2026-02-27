@@ -15,6 +15,7 @@ model Organizer {
   apiKey           String   @unique
   createdAt        DateTime @default(now())
   events           Event[]
+  bridgedTickets   BridgedTicket[]
 }
 
 model Event {
@@ -36,6 +37,7 @@ model Event {
   createdAt            DateTime     @default(now())
   tickets              Ticket[]
   pendingMints         PendingMint[]
+  bridgedTickets       BridgedTicket[]
 }
 
 model Ticket {
@@ -51,6 +53,7 @@ model Ticket {
   updatedAt           DateTime     @updatedAt
   scanLogs            ScanLog[]
   listings            Listing[]
+  bridgedTicket       BridgedTicket?
 
   @@unique([eventId, tokenId])
 }
@@ -103,4 +106,39 @@ model PendingMint {
   paymentAmount         BigInt?
   paymentCurrency       String?
   createdAt             DateTime @default(now())
+}
+
+enum BridgedTicketStatus {
+  PENDING
+  MINTED
+  CLAIMED
+  FAILED
+}
+
+model BridgedTicket {
+  id                String              @id @default(uuid())
+  externalTicketId  String
+  externalProvider  String              @default("generic")
+  eventId           String
+  event             Event               @relation(fields: [eventId], references: [id])
+  organizerId       String
+  organizer         Organizer           @relation(fields: [organizerId], references: [id])
+  ownerEmail        String
+  passType          String?
+  externalMetadata  Json?
+  tokenId           BigInt?
+  ticketId          String?             @unique
+  ticket            Ticket?             @relation(fields: [ticketId], references: [id])
+  vaultAddress      String?
+  claimedByAddress  String?
+  status            BridgedTicketStatus @default(PENDING)
+  mintTxHash        String?
+  claimTxHash       String?
+  errorMessage      String?
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+
+  @@unique([externalTicketId, organizerId])
+  @@index([ownerEmail, status])
+  @@index([eventId, status])
 }

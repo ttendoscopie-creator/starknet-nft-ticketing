@@ -112,7 +112,7 @@ vi.mock("../db/redis", () => ({
 
 vi.mock("bullmq", () => ({
   Queue: vi.fn(() => ({ add: mockQueueAdd })),
-  Worker: vi.fn(),
+  Worker: vi.fn(() => ({ on: vi.fn() })),
 }));
 
 vi.mock("stripe", () => ({

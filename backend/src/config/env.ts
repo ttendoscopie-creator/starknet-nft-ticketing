@@ -71,4 +71,11 @@ export function validateEnv(): void {
       throw new Error("Invalid STARKNET_RPC_URL: must be a valid URL");
     }
   }
+
+  // Bridge: optional vault address (defaults to DEPLOYER_ADDRESS at runtime)
+  // In production, use a secret manager for DEPLOYER_PRIVATE_KEY (the operator key).
+  const vaultAddress = process.env.VAULT_ADDRESS;
+  if (vaultAddress && !/^0x[0-9a-fA-F]+$/.test(vaultAddress)) {
+    throw new Error("Invalid hex format for env var: VAULT_ADDRESS");
+  }
 }
