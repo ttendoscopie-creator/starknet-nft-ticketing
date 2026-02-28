@@ -337,6 +337,39 @@ La valorisation de StarkWare atteint **8 milliards de dollars** (Serie D, 2022).
 | Scalabilite (festivals, stades) | 127+ TPS, compression Stateful |
 | Perennite (investissement long terme) | StarkWare valorise 8 Mds $, Sequoia/Paradigm/Vitalik |
 
+### 5.5 Projets majeurs ayant adopte la technologie StarkWare
+
+StarkWare ne se limite pas a Starknet. La technologie ZK-STARK est deja utilisee en production par des acteurs majeurs du sport, du divertissement et de la finance. Cette adoption prouve la fiabilite et la scalabilite de l'infrastructure sur laquelle repose notre plateforme.
+
+#### Sport et divertissement
+
+| Projet | Secteur | Description | Chiffres cles |
+|--------|---------|-------------|---------------|
+| **Sorare** | Football, NBA, MLB | Jeu de fantasy sport avec cartes NFT de joueurs officiels. Partenariats avec **Real Madrid, PSG, Liverpool, Bayern Munich, Juventus, Atletico Madrid** et 230+ clubs. Licences NBA et MLB. | Valorise 4,3 Mds $, leve 680 M$ (Serie B). A utilise StarkEx pendant 4 ans, reduisant ses frais de gas de 1 M$/semaine a 10 000 $/semaine. |
+| **Immutable** | Gaming, NFT | Plateforme de jeux et NFT (Gods Unchained, Guild of Guardians). Partenariats avec **GameStop, Disney, Marvel, Ubisoft, Tencent, TikTok**. Fonds de 100 M$ pour le gaming NFT. | Valorise 3,5 Mds $, leve 200 M$ (Temasek, Tencent, Animoca). Propulse par StarkEx. |
+| **Influence** | Jeu de strategie spatiale | Jeu MMO entierement on-chain sur Starknet. Colonisation d'asteroides, gestion de ressources, combats. | Plus grand jeu multijoueur sur Starknet. |
+| **Realms / Loot Survivor** | Gaming on-chain | Univers de jeux entierement on-chain gouverne par le token $LORDS. Loot Survivor est l'un des premiers jeux complexes fonctionnant sur un Layer 2. | Pionnier du gaming on-chain sur Starknet. |
+| **Cartridge / Dojo** | Infrastructure gaming | Moteur de jeux blockchain (Dojo) et plateforme de distribution (Cartridge). Equivalent d'un "Steam" decentralise. | 51 projets gaming sur Starknet (x12 en un an). |
+
+#### Finance et paiements
+
+| Projet | Secteur | Description | Chiffres cles |
+|--------|---------|-------------|---------------|
+| **dYdX** | Trading | Bourse decentralisee de produits derives (perpetuals). Volumes de trading institutionnels. | A utilise StarkEx pour traiter des milliards en volume de trading. |
+| **Ekubo** | DeFi | Protocole d'echange automatise (AMM) leader sur Starknet. | 60% de la liquidite totale de Starknet. |
+| **AEON Pay** | Paiement | Solution de paiement mobile acceptant le STRK. Partenariats Visa/Mastercard. | Reseau de 50+ millions de commercants. |
+
+#### Bilan technologique StarkEx (le predecesseur de Starknet)
+
+StarkEx, la version permissionnee de la technologie StarkWare, a deja prouve sa fiabilite a grande echelle :
+
+- **778 milliards de dollars** de volume de trading cumule
+- **294 millions de transactions** traitees
+- **90 millions de NFT** frappes (minted)
+- **Zero incident de securite** depuis le lancement en 2020
+
+Starknet est la version ouverte et decentralisee de cette meme technologie. En choisissant Starknet, notre plateforme beneficie d'une infrastructure eprouvee par des entreprises valorisees a plusieurs milliards de dollars.
+
 ---
 
 ## 6. Maturite technique
