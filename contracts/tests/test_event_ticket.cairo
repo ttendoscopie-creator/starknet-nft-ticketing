@@ -585,9 +585,7 @@ fn test_batch_mint_empty_fails() {
 fn test_batch_mint_exceeds_supply_fails() {
     // Deploy with max_supply = 2
     let contract = declare("EventTicket").unwrap().contract_class();
-    let calldata = array![
-        2, 1000000, 11000, 1000, organizer().into(), marketplace().into(), 0, 0,
-    ];
+    let calldata = array![2, 1000000, 11000, 1000, organizer().into(), marketplace().into(), 0, 0];
     let (addr, _) = contract.deploy(@calldata).unwrap();
     let safe = IEventTicketSafeDispatcher { contract_address: addr };
 

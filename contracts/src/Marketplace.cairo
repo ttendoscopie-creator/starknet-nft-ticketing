@@ -243,7 +243,8 @@ pub mod Marketplace {
                 );
         }
 
-        // ── View functions ──────────────────────────────────────────
+        // ── View functions
+        // ──────────────────────────────────────────
 
         fn get_listing(
             self: @ContractState, listing_id: u256,
@@ -272,7 +273,8 @@ pub mod Marketplace {
             self.listings.read(listing_id).active
         }
 
-        // ── Pause mechanism ─────────────────────────────────────────
+        // ── Pause mechanism
+        // ─────────────────────────────────────────
 
         fn pause(ref self: ContractState) {
             assert(get_caller_address() == self.owner.read(), 'NOT_OWNER');

@@ -4,7 +4,9 @@ use snforge_std::{
 };
 use starknet::{ContractAddress, contract_address_const};
 
-use starknet_nft_ticketing::TicketFactory::{ITicketFactoryDispatcher, ITicketFactoryDispatcherTrait};
+use starknet_nft_ticketing::TicketFactory::{
+    ITicketFactoryDispatcher, ITicketFactoryDispatcherTrait,
+};
 use starknet_nft_ticketing::EventTicket::{IEventTicketDispatcher, IEventTicketDispatcherTrait};
 use starknet_nft_ticketing::Marketplace::{
     IMarketplaceDispatcher, IMarketplaceDispatcherTrait, IMarketplaceSafeDispatcher,
@@ -57,7 +59,7 @@ fn test_full_lifecycle_factory_mint_marketplace_buy() {
             1000_u16, // royalty_bps (10%)
             mkt_addr, // marketplace
             false, // soulbound
-            0_u32, // max_transfers (unlimited)
+            0_u32 // max_transfers (unlimited)
         );
     stop_cheat_caller_address(factory_addr);
 
