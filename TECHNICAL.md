@@ -48,7 +48,7 @@ External Provider ──webhook──▶ POST /v1/bridge/webhook (HMAC-SHA256)
 - **Idempotency** — duplicate webhooks are safe via `@@unique([externalTicketId, organizerId])` compound key
 - **Marketplace whitelist** — `transfer_ticket` requires the caller to be in `allowed_marketplaces`; the bridge worker calls `add_marketplace(DEPLOYER_ADDRESS)` once per event contract (cached in Redis for 24h)
 - **Soulbound guard** — soulbound events are rejected at both webhook and worker level (soulbound NFTs cannot be transferred)
-- **Status machine** — `PENDING → MINTED → CLAIMED` (or `FAILED` with `errorMessage`)
+- **Status machine** — `PENDING → MINTED → CLAIMING → CLAIMED` (or `FAILED` with `errorMessage`). The `CLAIMING` state is an atomic transitional lock preventing double-claim races
 
 ## Smart Contracts (Cairo)
 
@@ -98,11 +98,11 @@ Organizer ──< Event ──< Ticket ──< ScanLog
 
 - **Organizer** — treasury address, paymaster address, API key (used for bridge HMAC)
 - **Event** — contract address, max supply, resale cap, royalty bps, accepted currencies, payment token address
-- **Ticket** — token ID, owner, status (`AVAILABLE` / `LISTED` / `USED` / `CANCELLED`)
+- **Ticket** — token ID, owner, status (`AVAILABLE` / `LISTED` / `USED` / `CANCELLED` / `REVOKED`)
 - **Listing** — seller, price, on-chain listing ID
 - **ScanLog** — gate ID, offline flag, sync status
 - **PendingMint** — Stripe payment intent or crypto tx hash, buyer wallet, payment amount/currency
-- **BridgedTicket** — external ticket ID, owner email, status (`PENDING` / `MINTED` / `CLAIMED` / `FAILED`), vault address, mint/claim tx hashes
+- **BridgedTicket** — external ticket ID, owner email, status (`PENDING` / `MINTED` / `CLAIMING` / `CLAIMED` / `FAILED`), vault address, mint/claim tx hashes
 
 ## API Endpoints
 
@@ -136,12 +136,17 @@ Organizer ──< Event ──< Ticket ──< ScanLog
 - Session keys scoped and time-limited (max 24h)
 - Account recovery with guardian + 24h timelock
 - Session keys auto-revoked on recovery execution
+- Session keys auto-revoked on owner key rotation (prevents old session reuse)
+- Zero-address validation on all mint and transfer recipients
+- Owner-only access control on TicketFactory `create_event`
+- `total_supply` decremented on ticket revocation (supply consistency)
+- Transfer count tracking on `TicketTransferred` events (enforces transfer limits)
 
 **Backend**
 - Helmet security headers (HSTS, X-Frame-Options, etc.)
 - QR codes rotate every 25s, expire at 30s server-side
 - HMAC-SHA256 signed QR payloads with hex-only signature validation
-- Redis SETNX for atomic anti-double-scan
+- Redis `SET EX NX` for atomic anti-double-scan (single atomic command)
 - Zod UUID validation on all route params
 - Sanitized error responses (no internal details leaked)
 - Graceful shutdown (SIGTERM/SIGINT)
@@ -151,6 +156,16 @@ Organizer ──< Event ──< Ticket ──< ScanLog
 - Strict env validation (hex format, URL format, Stripe key prefix)
 - Bridge webhook HMAC-SHA256 signature verification with `crypto.timingSafeEqual`
 - Bridge rate limiting: 100 req/min (webhook), 10 req/min (claim)
+- JWT email binding on bridge claim (email from verified JWT, not request body)
+- Atomic `CLAIMING` status transition prevents double-claim race conditions
+- Anti-enumeration: uniform 401 responses on webhook (organizer exists or not)
+- Redis HSET batch for markUsed worker (crash-safe, replaces in-memory Map)
+- Nonce mutex prevents concurrent transaction nonce collisions
+- Atomic tokenId allocation via Redis INCR (prevents duplicate token IDs)
+
+**Security audit**
+- Red-team hostile audit: 49 vulnerabilities identified and fixed (8 CRITICAL, 20 HIGH, 21 MEDIUM)
+- 30 attack simulation tests validating defenses: webhook forgery, ticket theft, double-claim races, JWT manipulation, replay attacks, payload injection, privilege escalation, scan abuse, cross-organizer breaches, soulbound bypass
 
 **Frontend**
 - Content Security Policy (Web3Auth + RPC domains whitelisted)
@@ -214,11 +229,11 @@ npx tsx demo.ts
 ### Run Tests
 
 ```bash
-# Cairo contracts (71 tests)
+# Cairo contracts (91 tests)
 cd contracts
 snforge test
 
-# Backend (164 tests)
+# Backend (195 tests)
 cd backend
 npm test
 
@@ -234,8 +249,8 @@ GitHub Actions runs 3 parallel jobs on every push/PR to `main`:
 
 | Job | Steps | Duration |
 |-----|-------|----------|
-| **Contracts** | `scarb fmt --check` -> `scarb build` -> `snforge test` -> gas report | ~1m45s |
-| **Backend** | `npm ci` -> `prisma generate` -> `tsc --noEmit` -> `vitest` (164 tests) | ~25s |
+| **Contracts** | `scarb fmt --check` -> `scarb build` -> `snforge test` (91 tests) -> gas report | ~1m45s |
+| **Backend** | `npm ci` -> `prisma generate` -> `tsc --noEmit` -> `vitest` (195 tests) | ~25s |
 | **Frontend** | `npm ci` -> `tsc --noEmit` -> `next build` | ~48s |
 
 ## Main Flow
@@ -296,7 +311,7 @@ starknet-nft-ticketing/
 │   │   ├── queue/          # BullMQ job definitions
 │   │   ├── indexer/        # Starknet event indexer
 │   │   └── db/             # Prisma singleton + schema + migrations + Redis
-│   └── vitest.config.ts    # 164 Vitest tests
+│   └── vitest.config.ts    # 195 Vitest tests
 ├── frontend/               # Next.js app
 │   ├── app/                # Pages (App Router)
 │   └── components/         # React components
