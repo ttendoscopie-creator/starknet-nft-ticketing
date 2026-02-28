@@ -104,7 +104,7 @@ export default function MarketplacePage() {
         <div className="rounded-xl bg-red-50 dark:bg-red-900/20 p-8 text-center">
           <p className="text-red-600 dark:text-red-400 mb-4">{error}</p>
           <button
-            onClick={fetchListings}
+            onClick={() => fetchListings()}
             className="rounded-lg bg-primary px-4 py-2 text-white font-medium hover:bg-indigo-600 transition"
           >
             Retry
