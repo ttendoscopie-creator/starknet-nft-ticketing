@@ -1,11 +1,14 @@
 import Fastify from "fastify";
 import cors from "@fastify/cors";
 import helmet from "@fastify/helmet";
+import swagger from "@fastify/swagger";
+import swaggerUi from "@fastify/swagger-ui";
 import { validateEnv } from "../config/env";
 import { registerRateLimit } from "./middleware/rateLimit";
 import { redis } from "../db/redis";
 import { prisma } from "../db/prisma";
 import { logger } from "../config/logger";
+import { register, httpRequestsTotal, httpRequestDuration } from "./metrics";
 import { scanRoutes } from "./routes/scan";
 import { webhookRoutes } from "./routes/webhooks";
 import { eventRoutes } from "./routes/events";
@@ -38,6 +41,12 @@ async function buildApp() {
     },
   });
 
+  // Correlation ID for request tracing
+  app.addHook("onRequest", async (request) => {
+    request.id = request.headers["x-request-id"] as string || request.id;
+    request.log = request.log.child({ requestId: request.id });
+  });
+
   // Security headers
   await app.register(helmet, {
     contentSecurityPolicy: false, // handled by frontend/Next.js
@@ -47,6 +56,59 @@ async function buildApp() {
   await app.register(cors, {
     origin: process.env.FRONTEND_URL!,
     credentials: true,
+  });
+
+  // OpenAPI / Swagger documentation
+  await app.register(swagger, {
+    openapi: {
+      info: {
+        title: "Starknet NFT Ticketing API",
+        description: "REST API for NFT-based event ticketing on Starknet",
+        version: "2.0.0",
+      },
+      servers: [
+        { url: `http://localhost:${PORT}`, description: "Local" },
+      ],
+      tags: [
+        { name: "Events", description: "Event management" },
+        { name: "Tickets", description: "Ticket operations" },
+        { name: "Marketplace", description: "P2P ticket resale" },
+        { name: "Scan", description: "QR code scanning & validation" },
+        { name: "Payments", description: "Crypto payment verification" },
+        { name: "Bridge", description: "External ticketing bridge (Digital Twin)" },
+        { name: "Webhooks", description: "Stripe webhook handler" },
+      ],
+      components: {
+        securitySchemes: {
+          bearerAuth: {
+            type: "http",
+            scheme: "bearer",
+            bearerFormat: "JWT",
+          },
+        },
+      },
+    },
+  });
+  await app.register(swaggerUi, {
+    routePrefix: "/docs",
+  });
+
+  // Prometheus metrics endpoint
+  app.get("/metrics", async (_request, reply) => {
+    reply.header("Content-Type", register.contentType);
+    return reply.send(await register.metrics());
+  });
+
+  // Metrics collection hooks
+  app.addHook("onResponse", async (request, reply) => {
+    const route = request.routeOptions?.url || request.url;
+    const method = request.method;
+    const statusCode = reply.statusCode.toString();
+    httpRequestsTotal.inc({ method, route, status_code: statusCode });
+    httpRequestDuration.observe(
+      { method, route, status_code: statusCode },
+      reply.elapsedTime / 1000,
+    );
   });
 
   // BigInt serialization — convert BigInt to string in JSON responses
@@ -89,6 +151,16 @@ async function buildApp() {
   await app.register(ticketRoutes);
   await app.register(marketplaceRoutes);
   await app.register(paymentRoutes);
+
+  // Global error handler — consistent error responses, no stack trace leaks
+  app.setErrorHandler((error: Error & { statusCode?: number }, request, reply) => {
+    request.log.error({ err: error, url: request.url, method: request.method }, "Unhandled error");
+    const statusCode = error.statusCode ?? 500;
+    reply.code(statusCode).send({
+      error: statusCode >= 500 ? "Internal server error" : error.message,
+      statusCode,
+    });
+  });
 
   return app;
 }

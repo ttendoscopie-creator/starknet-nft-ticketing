@@ -517,3 +517,253 @@ fn test_constructor_rejects_royalty_too_high() {
         Result::Err(_) => (),
     }
 }
+
+// ═══════════════════════════════════════════════════════
+// BATCH MINT TESTS
+// ═══════════════════════════════════════════════════════
+
+// TEST 27: Batch mint success
+#[test]
+fn test_batch_mint_success() {
+    let (dispatcher, _) = deploy_ticket();
+
+    start_cheat_caller_address(dispatcher.contract_address, organizer());
+    dispatcher
+        .batch_mint(
+            array![buyer(), other_buyer(), buyer()].span(), array![1_u256, 2_u256, 3_u256].span(),
+        );
+    stop_cheat_caller_address(dispatcher.contract_address);
+
+    assert_eq!(dispatcher.owner_of(1_u256), buyer());
+    assert_eq!(dispatcher.owner_of(2_u256), other_buyer());
+    assert_eq!(dispatcher.owner_of(3_u256), buyer());
+    assert_eq!(dispatcher.get_total_supply(), 3_u64);
+}
+
+// TEST 28: Batch mint not organizer -> NOT_ORGANIZER
+#[test]
+#[feature("safe_dispatcher")]
+fn test_batch_mint_not_organizer_fails() {
+    let (_, safe) = deploy_ticket();
+
+    cheat_caller_address(safe.contract_address, attacker(), CheatSpan::TargetCalls(1));
+    match safe.batch_mint(array![buyer()].span(), array![1_u256].span()) {
+        Result::Ok(_) => panic!("Should have failed with NOT_ORGANIZER"),
+        Result::Err(err) => assert(*err.at(0) == 'NOT_ORGANIZER', 'Wrong error code'),
+    }
+}
+
+// TEST 29: Batch mint length mismatch -> LENGTH_MISMATCH
+#[test]
+#[feature("safe_dispatcher")]
+fn test_batch_mint_length_mismatch_fails() {
+    let (_, safe) = deploy_ticket();
+
+    cheat_caller_address(safe.contract_address, organizer(), CheatSpan::TargetCalls(1));
+    match safe.batch_mint(array![buyer(), other_buyer()].span(), array![1_u256].span()) {
+        Result::Ok(_) => panic!("Should have failed with LENGTH_MISMATCH"),
+        Result::Err(err) => assert(*err.at(0) == 'LENGTH_MISMATCH', 'Wrong error code'),
+    }
+}
+
+// TEST 30: Batch mint empty -> EMPTY_BATCH
+#[test]
+#[feature("safe_dispatcher")]
+fn test_batch_mint_empty_fails() {
+    let (_, safe) = deploy_ticket();
+
+    cheat_caller_address(safe.contract_address, organizer(), CheatSpan::TargetCalls(1));
+    match safe.batch_mint(array![].span(), array![].span()) {
+        Result::Ok(_) => panic!("Should have failed with EMPTY_BATCH"),
+        Result::Err(err) => assert(*err.at(0) == 'EMPTY_BATCH', 'Wrong error code'),
+    }
+}
+
+// TEST 31: Batch mint exceeds max supply -> MAX_SUPPLY
+#[test]
+#[feature("safe_dispatcher")]
+fn test_batch_mint_exceeds_supply_fails() {
+    // Deploy with max_supply = 2
+    let contract = declare("EventTicket").unwrap().contract_class();
+    let calldata = array![
+        2, 1000000, 11000, 1000, organizer().into(), marketplace().into(), 0, 0,
+    ];
+    let (addr, _) = contract.deploy(@calldata).unwrap();
+    let safe = IEventTicketSafeDispatcher { contract_address: addr };
+
+    cheat_caller_address(safe.contract_address, organizer(), CheatSpan::TargetCalls(1));
+    match safe
+        .batch_mint(
+            array![buyer(), other_buyer(), buyer()].span(), array![1_u256, 2_u256, 3_u256].span(),
+        ) {
+        Result::Ok(_) => panic!("Should have failed with MAX_SUPPLY"),
+        Result::Err(err) => assert(*err.at(0) == 'MAX_SUPPLY', 'Wrong error code'),
+    }
+}
+
+// ═══════════════════════════════════════════════════════
+// SUPPLY VIEW TESTS
+// ═══════════════════════════════════════════════════════
+
+// TEST 32: get_total_supply and get_max_supply
+#[test]
+fn test_supply_views() {
+    let (dispatcher, _) = deploy_ticket();
+
+    assert_eq!(dispatcher.get_total_supply(), 0_u64);
+    assert_eq!(dispatcher.get_max_supply(), 100_u64);
+
+    start_cheat_caller_address(dispatcher.contract_address, organizer());
+    dispatcher.mint(buyer(), 1_u256);
+    dispatcher.mint(other_buyer(), 2_u256);
+    stop_cheat_caller_address(dispatcher.contract_address);
+
+    assert_eq!(dispatcher.get_total_supply(), 2_u64);
+    assert_eq!(dispatcher.get_max_supply(), 100_u64);
+}
+
+// TEST 33: total_supply decrements on revoke
+#[test]
+fn test_total_supply_decrements_on_revoke() {
+    let (dispatcher, _) = deploy_ticket();
+
+    start_cheat_caller_address(dispatcher.contract_address, organizer());
+    dispatcher.mint(buyer(), 1_u256);
+    assert_eq!(dispatcher.get_total_supply(), 1_u64);
+
+    dispatcher.revoke_ticket(1_u256);
+    assert_eq!(dispatcher.get_total_supply(), 0_u64);
+    stop_cheat_caller_address(dispatcher.contract_address);
+}
+
+// ═══════════════════════════════════════════════════════
+// PAUSE MECHANISM TESTS
+// ═══════════════════════════════════════════════════════
+
+// TEST 34: Pause and unpause success
+#[test]
+fn test_pause_unpause_success() {
+    let (dispatcher, _) = deploy_ticket();
+
+    assert_eq!(dispatcher.is_paused(), false);
+
+    start_cheat_caller_address(dispatcher.contract_address, organizer());
+    dispatcher.pause();
+    assert_eq!(dispatcher.is_paused(), true);
+
+    dispatcher.unpause();
+    assert_eq!(dispatcher.is_paused(), false);
+    stop_cheat_caller_address(dispatcher.contract_address);
+}
+
+// TEST 35: Pause by non-organizer -> NOT_ORGANIZER
+#[test]
+#[feature("safe_dispatcher")]
+fn test_pause_not_organizer_fails() {
+    let (_, safe) = deploy_ticket();
+
+    cheat_caller_address(safe.contract_address, attacker(), CheatSpan::TargetCalls(1));
+    match safe.pause() {
+        Result::Ok(_) => panic!("Should have failed with NOT_ORGANIZER"),
+        Result::Err(err) => assert(*err.at(0) == 'NOT_ORGANIZER', 'Wrong error code'),
+    }
+}
+
+// TEST 36: Mint while paused -> CONTRACT_PAUSED
+#[test]
+#[feature("safe_dispatcher")]
+fn test_mint_while_paused_fails() {
+    let (dispatcher, safe) = deploy_ticket();
+
+    start_cheat_caller_address(dispatcher.contract_address, organizer());
+    dispatcher.pause();
+    stop_cheat_caller_address(dispatcher.contract_address);
+
+    cheat_caller_address(safe.contract_address, organizer(), CheatSpan::TargetCalls(1));
+    match safe.mint(buyer(), 1_u256) {
+        Result::Ok(_) => panic!("Should have failed with CONTRACT_PAUSED"),
+        Result::Err(err) => assert(*err.at(0) == 'CONTRACT_PAUSED', 'Wrong error code'),
+    }
+}
+
+// TEST 37: Transfer while paused -> CONTRACT_PAUSED
+#[test]
+#[feature("safe_dispatcher")]
+fn test_transfer_while_paused_fails() {
+    let (dispatcher, safe) = deploy_ticket();
+
+    start_cheat_caller_address(dispatcher.contract_address, organizer());
+    dispatcher.mint(buyer(), 1_u256);
+    dispatcher.pause();
+    stop_cheat_caller_address(dispatcher.contract_address);
+
+    cheat_caller_address(safe.contract_address, marketplace(), CheatSpan::TargetCalls(1));
+    match safe.transfer_ticket(buyer(), other_buyer(), 1_u256, 500000_u128) {
+        Result::Ok(_) => panic!("Should have failed with CONTRACT_PAUSED"),
+        Result::Err(err) => assert(*err.at(0) == 'CONTRACT_PAUSED', 'Wrong error code'),
+    }
+}
+
+// TEST 38: mark_used while paused -> CONTRACT_PAUSED
+#[test]
+#[feature("safe_dispatcher")]
+fn test_mark_used_while_paused_fails() {
+    let (dispatcher, safe) = deploy_ticket();
+
+    start_cheat_caller_address(dispatcher.contract_address, organizer());
+    dispatcher.mint(buyer(), 1_u256);
+    dispatcher.add_staff(staff());
+    dispatcher.pause();
+    stop_cheat_caller_address(dispatcher.contract_address);
+
+    cheat_caller_address(safe.contract_address, staff(), CheatSpan::TargetCalls(1));
+    match safe.mark_used(1_u256) {
+        Result::Ok(_) => panic!("Should have failed with CONTRACT_PAUSED"),
+        Result::Err(err) => assert(*err.at(0) == 'CONTRACT_PAUSED', 'Wrong error code'),
+    }
+}
+
+// TEST 39: Operations resume after unpause
+#[test]
+fn test_operations_resume_after_unpause() {
+    let (dispatcher, _) = deploy_ticket();
+
+    start_cheat_caller_address(dispatcher.contract_address, organizer());
+    dispatcher.pause();
+    dispatcher.unpause();
+    dispatcher.mint(buyer(), 1_u256);
+    stop_cheat_caller_address(dispatcher.contract_address);
+
+    assert_eq!(dispatcher.owner_of(1_u256), buyer());
+}
+
+// TEST 40: Batch mint while paused -> CONTRACT_PAUSED
+#[test]
+#[feature("safe_dispatcher")]
+fn test_batch_mint_while_paused_fails() {
+    let (dispatcher, safe) = deploy_ticket();
+
+    start_cheat_caller_address(dispatcher.contract_address, organizer());
+    dispatcher.pause();
+    stop_cheat_caller_address(dispatcher.contract_address);
+
+    cheat_caller_address(safe.contract_address, organizer(), CheatSpan::TargetCalls(1));
+    match safe.batch_mint(array![buyer()].span(), array![1_u256].span()) {
+        Result::Ok(_) => panic!("Should have failed with CONTRACT_PAUSED"),
+        Result::Err(err) => assert(*err.at(0) == 'CONTRACT_PAUSED', 'Wrong error code'),
+    }
+}
+
+// TEST 41: Mint to zero address -> INVALID_RECIPIENT
+#[test]
+#[feature("safe_dispatcher")]
+fn test_mint_to_zero_address_fails() {
+    let (_, safe) = deploy_ticket();
+    let zero: ContractAddress = contract_address_const::<0>();
+
+    cheat_caller_address(safe.contract_address, organizer(), CheatSpan::TargetCalls(1));
+    match safe.mint(zero, 1_u256) {
+        Result::Ok(_) => panic!("Should have failed with INVALID_RECIPIENT"),
+        Result::Err(err) => assert(*err.at(0) == 'INVALID_RECIPIENT', 'Wrong error code'),
+    }
+}

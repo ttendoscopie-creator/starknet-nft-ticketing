@@ -385,3 +385,79 @@ fn test_paymaster_constructor_rejects_zero_txs() {
         Result::Err(_) => (),
     }
 }
+
+// ═══════════════════════════════════════════════════════
+// PAUSE MECHANISM TESTS
+// ═══════════════════════════════════════════════════════
+
+// TEST 17: Pause and unpause success
+#[test]
+fn test_paymaster_pause_unpause() {
+    let (dispatcher, _) = deploy_paymaster();
+
+    assert_eq!(dispatcher.is_paused(), false);
+
+    start_cheat_caller_address(dispatcher.contract_address, owner());
+    dispatcher.pause();
+    assert_eq!(dispatcher.is_paused(), true);
+
+    dispatcher.unpause();
+    assert_eq!(dispatcher.is_paused(), false);
+    stop_cheat_caller_address(dispatcher.contract_address);
+}
+
+// TEST 18: validate_and_pay while paused -> CONTRACT_PAUSED
+#[test]
+#[feature("safe_dispatcher")]
+fn test_validate_while_paused_fails() {
+    let (dispatcher, safe) = setup_sponsored_user();
+    let addr = dispatcher.contract_address;
+
+    start_cheat_caller_address(addr, owner());
+    dispatcher.pause();
+    stop_cheat_caller_address(addr);
+
+    start_cheat_caller_address(addr, user());
+    start_cheat_block_timestamp(addr, 86400);
+    match safe.validate_and_pay(user(), 50000_u256) {
+        Result::Ok(_) => panic!("Should have failed with CONTRACT_PAUSED"),
+        Result::Err(err) => assert(*err.at(0) == 'CONTRACT_PAUSED', 'Wrong error code'),
+    }
+    stop_cheat_block_timestamp(addr);
+    stop_cheat_caller_address(addr);
+}
+
+// TEST 19: Pause by non-owner -> NOT_OWNER
+#[test]
+#[feature("safe_dispatcher")]
+fn test_paymaster_pause_not_owner_fails() {
+    let (_, safe) = deploy_paymaster();
+    let addr = safe.contract_address;
+
+    cheat_caller_address(addr, attacker(), CheatSpan::TargetCalls(1));
+    match safe.pause() {
+        Result::Ok(_) => panic!("Should have failed with NOT_OWNER"),
+        Result::Err(err) => assert(*err.at(0) == 'NOT_OWNER', 'Wrong error code'),
+    }
+}
+
+// TEST 20: Operations resume after unpause
+#[test]
+fn test_paymaster_operations_resume_after_unpause() {
+    let (dispatcher, _) = setup_sponsored_user();
+    let addr = dispatcher.contract_address;
+
+    start_cheat_caller_address(addr, owner());
+    dispatcher.pause();
+    dispatcher.unpause();
+    stop_cheat_caller_address(addr);
+
+    start_cheat_caller_address(addr, user());
+    start_cheat_block_timestamp(addr, 86400);
+    dispatcher.validate_and_pay(user(), 50000_u256);
+    stop_cheat_block_timestamp(addr);
+    stop_cheat_caller_address(addr);
+
+    let (_, spent) = dispatcher.get_organizer_budget(organizer1());
+    assert_eq!(spent, 50000);
+}

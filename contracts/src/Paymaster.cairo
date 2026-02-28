@@ -35,6 +35,9 @@ pub trait IPaymaster<TContractState> {
     fn get_organizer_budget(self: @TContractState, organizer: ContractAddress) -> (u256, u256);
     fn get_account_organizer(self: @TContractState, account: ContractAddress) -> ContractAddress;
     fn is_organizer_active(self: @TContractState, organizer: ContractAddress) -> bool;
+    fn pause(ref self: TContractState);
+    fn unpause(ref self: TContractState);
+    fn is_paused(self: @TContractState) -> bool;
 }
 
 #[starknet::contract]
@@ -66,6 +69,7 @@ pub mod Paymaster {
         last_tx_time: Map<ContractAddress, u64>,
         daily_tx_count: Map<ContractAddress, u64>,
         daily_tx_count_reset_day: Map<ContractAddress, u64>,
+        paused: bool,
     }
 
     #[event]
@@ -77,7 +81,15 @@ pub mod Paymaster {
         AccountSponsored: AccountSponsored,
         AccountUnsponsored: AccountUnsponsored,
         GasSponsored: GasSponsored,
+        Paused: Paused,
+        Unpaused: Unpaused,
     }
+
+    #[derive(Drop, starknet::Event)]
+    pub struct Paused {}
+
+    #[derive(Drop, starknet::Event)]
+    pub struct Unpaused {}
 
     #[derive(Drop, starknet::Event)]
     pub struct OrganizerSetup {
@@ -178,6 +190,7 @@ pub mod Paymaster {
         }
 
         fn top_up_organizer(ref self: ContractState, amount: u256) {
+            assert(!self.paused.read(), 'CONTRACT_PAUSED');
             let caller = get_caller_address();
             assert(self.organizer_active.read(caller), 'NOT_ACTIVE_ORGANIZER');
             assert(amount > 0, 'ZERO_AMOUNT');
@@ -209,6 +222,7 @@ pub mod Paymaster {
         }
 
         fn validate_and_pay(ref self: ContractState, user: ContractAddress, gas_estimate: u256) {
+            assert(!self.paused.read(), 'CONTRACT_PAUSED');
             // SECURITY FIX (HIGH-17): Only the sponsored user or owner can call
             let caller = get_caller_address();
             assert(caller == user || caller == self.owner.read(), 'NOT_AUTHORIZED');
@@ -284,6 +298,24 @@ pub mod Paymaster {
 
         fn is_organizer_active(self: @ContractState, organizer: ContractAddress) -> bool {
             self.organizer_active.read(organizer)
+        }
+
+        fn pause(ref self: ContractState) {
+            assert(get_caller_address() == self.owner.read(), 'NOT_OWNER');
+            assert(!self.paused.read(), 'ALREADY_PAUSED');
+            self.paused.write(true);
+            self.emit(Event::Paused(Paused {}));
+        }
+
+        fn unpause(ref self: ContractState) {
+            assert(get_caller_address() == self.owner.read(), 'NOT_OWNER');
+            assert(self.paused.read(), 'NOT_PAUSED');
+            self.paused.write(false);
+            self.emit(Event::Unpaused(Unpaused {}));
+        }
+
+        fn is_paused(self: @ContractState) -> bool {
+            self.paused.read()
         }
     }
 }

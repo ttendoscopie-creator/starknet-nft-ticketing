@@ -20,6 +20,9 @@ pub trait ITicketFactory<TContractState> {
     fn get_event_contract(self: @TContractState, event_id: u256) -> ContractAddress;
     fn get_event_count(self: @TContractState) -> u256;
     fn update_ticket_class_hash(ref self: TContractState, new_hash: ClassHash);
+    fn pause(ref self: TContractState);
+    fn unpause(ref self: TContractState);
+    fn is_paused(self: @TContractState) -> bool;
 }
 
 #[starknet::contract]
@@ -37,13 +40,22 @@ pub mod TicketFactory {
         owner: ContractAddress,
         event_contracts: Map<u256, ContractAddress>,
         event_count: u256,
+        paused: bool,
     }
 
     #[event]
     #[derive(Drop, starknet::Event)]
     pub enum Event {
         EventCreated: EventCreated,
+        Paused: Paused,
+        Unpaused: Unpaused,
     }
+
+    #[derive(Drop, starknet::Event)]
+    pub struct Paused {}
+
+    #[derive(Drop, starknet::Event)]
+    pub struct Unpaused {}
 
     #[derive(Drop, starknet::Event)]
     pub struct EventCreated {
@@ -72,6 +84,7 @@ pub mod TicketFactory {
             soulbound: bool,
             max_transfers: u32,
         ) -> ContractAddress {
+            assert(!self.paused.read(), 'CONTRACT_PAUSED');
             // SECURITY FIX: Only owner can create events via factory
             assert(get_caller_address() == self.owner.read(), 'NOT_OWNER');
             let organizer = get_caller_address();
@@ -117,6 +130,24 @@ pub mod TicketFactory {
             assert(get_caller_address() == self.owner.read(), 'NOT_OWNER');
             assert(!new_hash.is_zero(), 'INVALID_CLASS_HASH');
             self.ticket_class_hash.write(new_hash);
+        }
+
+        fn pause(ref self: ContractState) {
+            assert(get_caller_address() == self.owner.read(), 'NOT_OWNER');
+            assert(!self.paused.read(), 'ALREADY_PAUSED');
+            self.paused.write(true);
+            self.emit(Event::Paused(Paused {}));
+        }
+
+        fn unpause(ref self: ContractState) {
+            assert(get_caller_address() == self.owner.read(), 'NOT_OWNER');
+            assert(self.paused.read(), 'NOT_PAUSED');
+            self.paused.write(false);
+            self.emit(Event::Unpaused(Unpaused {}));
+        }
+
+        fn is_paused(self: @ContractState) -> bool {
+            self.paused.read()
         }
     }
 }

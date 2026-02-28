@@ -477,3 +477,156 @@ fn test_marketplace_constructor_rejects_zero_treasury() {
         Result::Err(_) => (),
     }
 }
+
+// ═══════════════════════════════════════════════════════
+// VIEW FUNCTION TESTS
+// ═══════════════════════════════════════════════════════
+
+// TEST 18: get_listing returns correct data
+#[test]
+fn test_get_listing_returns_data() {
+    let (mkt, _, ticket, _) = deploy_marketplace_with_ticket();
+    mint_ticket_to_seller(ticket, 1_u256);
+
+    start_cheat_caller_address(mkt.contract_address, seller());
+    let listing_id = mkt.create_listing(ticket.contract_address, 1_u256, 500000_u256);
+    stop_cheat_caller_address(mkt.contract_address);
+
+    let (s, tc, tid, price, active) = mkt.get_listing(listing_id);
+    assert_eq!(s, seller());
+    assert_eq!(tc, ticket.contract_address);
+    assert_eq!(tid, 1_u256);
+    assert_eq!(price, 500000_u256);
+    assert_eq!(active, true);
+}
+
+// TEST 19: get_listing_count increments
+#[test]
+fn test_get_listing_count() {
+    let (mkt, _, ticket, _) = deploy_marketplace_with_ticket();
+
+    assert_eq!(mkt.get_listing_count(), 0_u256);
+
+    mint_ticket_to_seller(ticket, 1_u256);
+    start_cheat_caller_address(mkt.contract_address, seller());
+    mkt.create_listing(ticket.contract_address, 1_u256, 500000_u256);
+    stop_cheat_caller_address(mkt.contract_address);
+
+    assert_eq!(mkt.get_listing_count(), 1_u256);
+}
+
+// TEST 20: get_platform_fee, get_payment_token, get_treasury
+#[test]
+fn test_marketplace_config_views() {
+    let (mkt, _, _, erc20) = deploy_marketplace_with_ticket();
+
+    assert_eq!(mkt.get_platform_fee(), 500_u256); // 500 bps = 5%
+    assert_eq!(mkt.get_payment_token(), erc20.contract_address);
+    assert_eq!(mkt.get_treasury(), treasury());
+}
+
+// TEST 21: is_listing_active
+#[test]
+fn test_is_listing_active() {
+    let (mkt, _, ticket, _) = deploy_marketplace_with_ticket();
+    mint_ticket_to_seller(ticket, 1_u256);
+
+    start_cheat_caller_address(mkt.contract_address, seller());
+    let listing_id = mkt.create_listing(ticket.contract_address, 1_u256, 500000_u256);
+    assert_eq!(mkt.is_listing_active(listing_id), true);
+
+    mkt.cancel_listing(listing_id);
+    assert_eq!(mkt.is_listing_active(listing_id), false);
+    stop_cheat_caller_address(mkt.contract_address);
+}
+
+// ═══════════════════════════════════════════════════════
+// PAUSE MECHANISM TESTS
+// ═══════════════════════════════════════════════════════
+
+// TEST 22: Pause and unpause success
+#[test]
+fn test_marketplace_pause_unpause() {
+    let (mkt, _, _, _) = deploy_marketplace_with_ticket();
+
+    assert_eq!(mkt.is_paused(), false);
+
+    start_cheat_caller_address(mkt.contract_address, owner());
+    mkt.pause();
+    assert_eq!(mkt.is_paused(), true);
+
+    mkt.unpause();
+    assert_eq!(mkt.is_paused(), false);
+    stop_cheat_caller_address(mkt.contract_address);
+}
+
+// TEST 23: Pause by non-owner -> NOT_OWNER
+#[test]
+#[feature("safe_dispatcher")]
+fn test_marketplace_pause_not_owner_fails() {
+    let (_, safe_mkt, _, _) = deploy_marketplace_with_ticket();
+
+    cheat_caller_address(safe_mkt.contract_address, attacker(), CheatSpan::TargetCalls(1));
+    match safe_mkt.pause() {
+        Result::Ok(_) => panic!("Should have failed with NOT_OWNER"),
+        Result::Err(err) => assert(*err.at(0) == 'NOT_OWNER', 'Wrong error code'),
+    }
+}
+
+// TEST 24: Create listing while paused -> CONTRACT_PAUSED
+#[test]
+#[feature("safe_dispatcher")]
+fn test_create_listing_while_paused_fails() {
+    let (mkt, safe_mkt, ticket, _) = deploy_marketplace_with_ticket();
+    mint_ticket_to_seller(ticket, 1_u256);
+
+    start_cheat_caller_address(mkt.contract_address, owner());
+    mkt.pause();
+    stop_cheat_caller_address(mkt.contract_address);
+
+    cheat_caller_address(safe_mkt.contract_address, seller(), CheatSpan::TargetCalls(1));
+    match safe_mkt.create_listing(ticket.contract_address, 1_u256, 500000_u256) {
+        Result::Ok(_) => panic!("Should have failed with CONTRACT_PAUSED"),
+        Result::Err(err) => assert(*err.at(0) == 'CONTRACT_PAUSED', 'Wrong error code'),
+    }
+}
+
+// TEST 25: Buy listing while paused -> CONTRACT_PAUSED
+#[test]
+#[feature("safe_dispatcher")]
+fn test_buy_listing_while_paused_fails() {
+    let (mkt, safe_mkt, ticket, _) = deploy_marketplace_with_ticket();
+    mint_ticket_to_seller(ticket, 1_u256);
+
+    start_cheat_caller_address(mkt.contract_address, seller());
+    let listing_id = mkt.create_listing(ticket.contract_address, 1_u256, 500000_u256);
+    stop_cheat_caller_address(mkt.contract_address);
+
+    start_cheat_caller_address(mkt.contract_address, owner());
+    mkt.pause();
+    stop_cheat_caller_address(mkt.contract_address);
+
+    cheat_caller_address(safe_mkt.contract_address, buyer_addr(), CheatSpan::TargetCalls(1));
+    match safe_mkt.buy_listing(listing_id) {
+        Result::Ok(_) => panic!("Should have failed with CONTRACT_PAUSED"),
+        Result::Err(err) => assert(*err.at(0) == 'CONTRACT_PAUSED', 'Wrong error code'),
+    }
+}
+
+// TEST 26: Operations resume after unpause
+#[test]
+fn test_marketplace_operations_resume_after_unpause() {
+    let (mkt, _, ticket, _) = deploy_marketplace_with_ticket();
+    mint_ticket_to_seller(ticket, 1_u256);
+
+    start_cheat_caller_address(mkt.contract_address, owner());
+    mkt.pause();
+    mkt.unpause();
+    stop_cheat_caller_address(mkt.contract_address);
+
+    start_cheat_caller_address(mkt.contract_address, seller());
+    let listing_id = mkt.create_listing(ticket.contract_address, 1_u256, 500000_u256);
+    stop_cheat_caller_address(mkt.contract_address);
+
+    assert_eq!(mkt.is_listing_active(listing_id), true);
+}

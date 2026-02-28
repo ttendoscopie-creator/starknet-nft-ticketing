@@ -198,3 +198,58 @@ fn test_update_ticket_class_hash_zero_fails() {
         Result::Err(err) => assert(*err.at(0) == 'INVALID_CLASS_HASH', 'Wrong error code'),
     }
 }
+
+// ═══════════════════════════════════════════════════════
+// PAUSE MECHANISM TESTS
+// ═══════════════════════════════════════════════════════
+
+// TEST 11: Pause and unpause success
+#[test]
+fn test_factory_pause_unpause() {
+    let factory = deploy_factory();
+
+    assert_eq!(factory.is_paused(), false);
+
+    start_cheat_caller_address(factory.contract_address, owner());
+    factory.pause();
+    assert_eq!(factory.is_paused(), true);
+
+    factory.unpause();
+    assert_eq!(factory.is_paused(), false);
+    stop_cheat_caller_address(factory.contract_address);
+}
+
+// TEST 12: Create event while paused -> CONTRACT_PAUSED
+#[test]
+#[feature("safe_dispatcher")]
+fn test_create_event_while_paused_fails() {
+    let factory = deploy_factory();
+    let safe = ITicketFactorySafeDispatcher { contract_address: factory.contract_address };
+
+    start_cheat_caller_address(factory.contract_address, owner());
+    factory.pause();
+    stop_cheat_caller_address(factory.contract_address);
+
+    cheat_caller_address(safe.contract_address, owner(), CheatSpan::TargetCalls(1));
+    match safe
+        .create_event(
+            100_u64, 1000000_u128, 11000_u16, 1000_u16, marketplace_addr(), false, 0_u32,
+        ) {
+        Result::Ok(_) => panic!("Should have failed with CONTRACT_PAUSED"),
+        Result::Err(err) => assert(*err.at(0) == 'CONTRACT_PAUSED', 'Wrong error code'),
+    }
+}
+
+// TEST 13: Pause by non-owner -> NOT_OWNER
+#[test]
+#[feature("safe_dispatcher")]
+fn test_factory_pause_not_owner_fails() {
+    let factory = deploy_factory();
+    let safe = ITicketFactorySafeDispatcher { contract_address: factory.contract_address };
+
+    cheat_caller_address(safe.contract_address, organizer(), CheatSpan::TargetCalls(1));
+    match safe.pause() {
+        Result::Ok(_) => panic!("Should have failed with NOT_OWNER"),
+        Result::Err(err) => assert(*err.at(0) == 'NOT_OWNER', 'Wrong error code'),
+    }
+}

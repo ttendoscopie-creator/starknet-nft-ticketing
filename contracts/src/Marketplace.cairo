@@ -33,6 +33,19 @@ pub trait IMarketplace<TContractState> {
     ) -> u256;
     fn cancel_listing(ref self: TContractState, listing_id: u256);
     fn buy_listing(ref self: TContractState, listing_id: u256);
+    // Views
+    fn get_listing(
+        self: @TContractState, listing_id: u256,
+    ) -> (ContractAddress, ContractAddress, u256, u256, bool);
+    fn get_listing_count(self: @TContractState) -> u256;
+    fn get_platform_fee(self: @TContractState) -> u256;
+    fn get_payment_token(self: @TContractState) -> ContractAddress;
+    fn get_treasury(self: @TContractState) -> ContractAddress;
+    fn is_listing_active(self: @TContractState, listing_id: u256) -> bool;
+    // Pause
+    fn pause(ref self: TContractState);
+    fn unpause(ref self: TContractState);
+    fn is_paused(self: @TContractState) -> bool;
 }
 
 #[starknet::contract]
@@ -61,7 +74,52 @@ pub mod Marketplace {
         platform_fee_bps: u256,
         platform_treasury: ContractAddress,
         owner: ContractAddress,
+        paused: bool,
     }
+
+    #[event]
+    #[derive(Drop, starknet::Event)]
+    pub enum Event {
+        ListingCreated: ListingCreated,
+        ListingCancelled: ListingCancelled,
+        ListingPurchased: ListingPurchased,
+        Paused: Paused,
+        Unpaused: Unpaused,
+    }
+
+    #[derive(Drop, starknet::Event)]
+    pub struct ListingCreated {
+        #[key]
+        pub listing_id: u256,
+        pub seller: ContractAddress,
+        pub ticket_contract: ContractAddress,
+        pub token_id: u256,
+        pub price: u256,
+    }
+
+    #[derive(Drop, starknet::Event)]
+    pub struct ListingCancelled {
+        #[key]
+        pub listing_id: u256,
+        pub seller: ContractAddress,
+    }
+
+    #[derive(Drop, starknet::Event)]
+    pub struct ListingPurchased {
+        #[key]
+        pub listing_id: u256,
+        pub buyer: ContractAddress,
+        pub seller: ContractAddress,
+        pub ticket_contract: ContractAddress,
+        pub token_id: u256,
+        pub price: u256,
+    }
+
+    #[derive(Drop, starknet::Event)]
+    pub struct Paused {}
+
+    #[derive(Drop, starknet::Event)]
+    pub struct Unpaused {}
 
     #[constructor]
     fn constructor(
@@ -86,12 +144,11 @@ pub mod Marketplace {
         fn create_listing(
             ref self: ContractState, ticket_contract: ContractAddress, token_id: u256, price: u256,
         ) -> u256 {
+            assert(!self.paused.read(), 'CONTRACT_PAUSED');
             let seller = get_caller_address();
             let ticket = IEventTicketExternalDispatcher { contract_address: ticket_contract };
 
-            // Module 6: Soulbound check
             assert(!ticket.is_soulbound(), 'TICKET_SOULBOUND');
-
             assert(ticket.owner_of(token_id) == seller, 'NOT_OWNER');
             assert(!ticket.is_used(token_id), 'TICKET_USED');
             assert(price > 0, 'PRICE_ZERO');
@@ -100,28 +157,38 @@ pub mod Marketplace {
                 .listings
                 .write(id, Listing { seller, ticket_contract, token_id, price, active: true });
             self.next_listing_id.write(id + 1);
+            self
+                .emit(
+                    Event::ListingCreated(
+                        ListingCreated { listing_id: id, seller, ticket_contract, token_id, price },
+                    ),
+                );
             id
         }
 
         fn cancel_listing(ref self: ContractState, listing_id: u256) {
+            assert(!self.paused.read(), 'CONTRACT_PAUSED');
             let l = self.listings.read(listing_id);
-            assert(get_caller_address() == l.seller, 'NOT_SELLER');
+            let seller = l.seller;
+            assert(get_caller_address() == seller, 'NOT_SELLER');
             assert(l.active, 'NOT_ACTIVE');
             self
                 .listings
                 .write(
                     listing_id,
                     Listing {
-                        seller: l.seller,
+                        seller,
                         ticket_contract: l.ticket_contract,
                         token_id: l.token_id,
                         price: l.price,
                         active: false,
                     },
                 );
+            self.emit(Event::ListingCancelled(ListingCancelled { listing_id, seller }));
         }
 
         fn buy_listing(ref self: ContractState, listing_id: u256) {
+            assert(!self.paused.read(), 'CONTRACT_PAUSED');
             let buyer = get_caller_address();
             let l = self.listings.read(listing_id);
 
@@ -165,6 +232,64 @@ pub mod Marketplace {
             );
             assert(erc20.transfer_from(buyer, seller, seller_amount), 'SELLER_TRANSFER_FAILED');
             ticket.transfer_ticket(seller, buyer, token_id, price_u128);
+
+            self
+                .emit(
+                    Event::ListingPurchased(
+                        ListingPurchased {
+                            listing_id, buyer, seller, ticket_contract, token_id, price,
+                        },
+                    ),
+                );
+        }
+
+        // ── View functions ──────────────────────────────────────────
+
+        fn get_listing(
+            self: @ContractState, listing_id: u256,
+        ) -> (ContractAddress, ContractAddress, u256, u256, bool) {
+            let l = self.listings.read(listing_id);
+            (l.seller, l.ticket_contract, l.token_id, l.price, l.active)
+        }
+
+        fn get_listing_count(self: @ContractState) -> u256 {
+            self.next_listing_id.read()
+        }
+
+        fn get_platform_fee(self: @ContractState) -> u256 {
+            self.platform_fee_bps.read()
+        }
+
+        fn get_payment_token(self: @ContractState) -> ContractAddress {
+            self.payment_token.read()
+        }
+
+        fn get_treasury(self: @ContractState) -> ContractAddress {
+            self.platform_treasury.read()
+        }
+
+        fn is_listing_active(self: @ContractState, listing_id: u256) -> bool {
+            self.listings.read(listing_id).active
+        }
+
+        // ── Pause mechanism ─────────────────────────────────────────
+
+        fn pause(ref self: ContractState) {
+            assert(get_caller_address() == self.owner.read(), 'NOT_OWNER');
+            assert(!self.paused.read(), 'ALREADY_PAUSED');
+            self.paused.write(true);
+            self.emit(Event::Paused(Paused {}));
+        }
+
+        fn unpause(ref self: ContractState) {
+            assert(get_caller_address() == self.owner.read(), 'NOT_OWNER');
+            assert(self.paused.read(), 'NOT_PAUSED');
+            self.paused.write(false);
+            self.emit(Event::Unpaused(Unpaused {}));
+        }
+
+        fn is_paused(self: @ContractState) -> bool {
+            self.paused.read()
         }
     }
 }

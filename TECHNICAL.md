@@ -54,10 +54,10 @@ External Provider ──webhook──▶ POST /v1/bridge/webhook (HMAC-SHA256)
 
 | Contract | Description |
 |----------|-------------|
-| **EventTicket** | ERC-721 NFT — mint, transfer, mark_used, staff roles, price caps, royalties, soulbound mode, transfer limits |
-| **TicketFactory** | Deploys one EventTicket per event |
-| **Marketplace** | P2P resale — list, buy, cancel with CEI anti-reentrancy, 2% platform fee, marketplace whitelist |
-| **Paymaster** | Per-organizer gas sponsorship — budgets, daily limits, anti-spam (interval + daily tx count), account sponsoring |
+| **EventTicket** | ERC-721 NFT — mint, batch_mint, transfer, mark_used, staff roles, price caps, royalties, soulbound mode, transfer limits, pause mechanism |
+| **TicketFactory** | Deploys one EventTicket per event, pause mechanism, upgradeable ticket class hash |
+| **Marketplace** | P2P resale — list, buy, cancel with CEI anti-reentrancy, 2% platform fee, marketplace whitelist, pause mechanism, events (ListingCreated/Cancelled/Purchased), view functions |
+| **Paymaster** | Per-organizer gas sponsorship — budgets, daily limits, anti-spam (interval + daily tx count), account sponsoring, pause mechanism |
 | **AccountContract** | SNIP-6 abstract account — 24h scoped session keys, guardian + timelock recovery, owner key rotation |
 
 ## Backend (TypeScript)
@@ -70,7 +70,9 @@ External Provider ──webhook──▶ POST /v1/bridge/webhook (HMAC-SHA256)
 | **Queue** | BullMQ workers for async on-chain operations (mint, markUsed, bridgeMint, bridgeClaim) |
 | **DB** | PostgreSQL (Prisma singleton) + Redis (ticket cache, atomic double-spend prevention) |
 | **Indexer** | Starknet event indexer with adaptive backoff |
-| **Hardening** | Helmet security headers, Zod UUID validation on all params, graceful shutdown, circuit breaker for RPC |
+| **Monitoring** | Prometheus metrics (`/metrics`), request latency histograms, queue job counters, cache hit/miss, Starknet tx counters |
+| **Docs** | OpenAPI/Swagger UI at `/docs`, auto-generated from route schemas |
+| **Hardening** | Helmet security headers, Zod UUID validation on all params, graceful shutdown, circuit breaker for RPC, correlation ID tracing, global error handler |
 
 ## Frontend (Next.js 14)
 
@@ -109,6 +111,8 @@ Organizer ──< Event ──< Ticket ──< ScanLog
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
 | `GET` | `/health` | — | Health check (DB + Redis with 5s timeout) |
+| `GET` | `/metrics` | — | Prometheus metrics (request latency, queue jobs, cache, Starknet tx) |
+| `GET` | `/docs` | — | OpenAPI/Swagger UI |
 | `POST` | `/v1/scan/validate` | staff | Validate QR (< 50 ms) |
 | `POST` | `/v1/webhooks/stripe` | — | Stripe payment webhook |
 | `POST` | `/v1/events` | organizer | Create event + deploy contract |
@@ -141,6 +145,9 @@ Organizer ──< Event ──< Ticket ──< ScanLog
 - Owner-only access control on TicketFactory `create_event`
 - `total_supply` decremented on ticket revocation (supply consistency)
 - Transfer count tracking on `TicketTransferred` events (enforces transfer limits)
+- Emergency pause mechanism on all contracts (EventTicket, TicketFactory, Marketplace, Paymaster)
+- Batch mint with pre-validation (supply check, zero-address guard, duplicate detection)
+- Marketplace emits ListingCreated/Cancelled/Purchased events for indexing
 
 **Backend**
 - Helmet security headers (HSTS, X-Frame-Options, etc.)
@@ -162,6 +169,8 @@ Organizer ──< Event ──< Ticket ──< ScanLog
 - Redis HSET batch for markUsed worker (crash-safe, replaces in-memory Map)
 - Nonce mutex prevents concurrent transaction nonce collisions
 - Atomic tokenId allocation via Redis INCR (prevents duplicate token IDs)
+- Correlation ID request tracing (`X-Request-Id` header propagation)
+- Global error handler (no stack trace leaks on 5xx, sanitized messages)
 
 **Security audit**
 - Red-team hostile audit: 49 vulnerabilities identified and fixed (8 CRITICAL, 20 HIGH, 21 MEDIUM)
@@ -229,16 +238,17 @@ npx tsx demo.ts
 ### Run Tests
 
 ```bash
-# Cairo contracts (91 tests)
+# Cairo contracts (125 tests)
 cd contracts
 snforge test
 
-# Backend (195 tests)
+# Backend (217 tests)
 cd backend
 npm test
 
-# Frontend (type check + build)
+# Frontend (9 tests + type check + build)
 cd frontend
+npm test
 npx tsc --noEmit
 npx next build
 ```
@@ -249,9 +259,9 @@ GitHub Actions runs 3 parallel jobs on every push/PR to `main`:
 
 | Job | Steps | Duration |
 |-----|-------|----------|
-| **Contracts** | `scarb fmt --check` -> `scarb build` -> `snforge test` (91 tests) -> gas report | ~1m45s |
-| **Backend** | `npm ci` -> `prisma generate` -> `tsc --noEmit` -> `vitest` (195 tests) | ~25s |
-| **Frontend** | `npm ci` -> `tsc --noEmit` -> `next build` | ~48s |
+| **Contracts** | `scarb fmt --check` -> `scarb build` -> `snforge test` (125 tests) -> gas report | ~2m |
+| **Backend** | `npm ci` -> `prisma generate` -> `tsc --noEmit` -> `vitest` (217 tests) | ~25s |
+| **Frontend** | `npm ci` -> `vitest` (9 tests) -> `tsc --noEmit` -> `next build` | ~50s |
 
 ## Main Flow
 
@@ -311,7 +321,7 @@ starknet-nft-ticketing/
 │   │   ├── queue/          # BullMQ job definitions
 │   │   ├── indexer/        # Starknet event indexer
 │   │   └── db/             # Prisma singleton + schema + migrations + Redis
-│   └── vitest.config.ts    # 195 Vitest tests
+│   └── vitest.config.ts    # 217 Vitest tests
 ├── frontend/               # Next.js app
 │   ├── app/                # Pages (App Router)
 │   └── components/         # React components

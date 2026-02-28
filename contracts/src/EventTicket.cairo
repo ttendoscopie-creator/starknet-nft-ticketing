@@ -7,6 +7,9 @@ use starknet::{ContractAddress, get_caller_address};
 #[starknet::interface]
 pub trait IEventTicket<TContractState> {
     fn mint(ref self: TContractState, to: ContractAddress, token_id: u256);
+    fn batch_mint(
+        ref self: TContractState, recipients: Span<ContractAddress>, token_ids: Span<u256>,
+    );
     fn transfer_ticket(
         ref self: TContractState,
         from: ContractAddress,
@@ -31,6 +34,15 @@ pub trait IEventTicket<TContractState> {
     fn is_marketplace_allowed(self: @TContractState, marketplace: ContractAddress) -> bool;
     fn get_transfer_count(self: @TContractState, token_id: u256) -> u32;
     fn get_max_transfers(self: @TContractState) -> u32;
+
+    // Supply views
+    fn get_total_supply(self: @TContractState) -> u64;
+    fn get_max_supply(self: @TContractState) -> u64;
+
+    // Pause
+    fn pause(ref self: TContractState);
+    fn unpause(ref self: TContractState);
+    fn is_paused(self: @TContractState) -> bool;
 }
 
 #[starknet::contract]
@@ -55,6 +67,7 @@ pub mod EventTicket {
         royalty_bps: u16,
         max_transfers: u32,
         soulbound: bool,
+        paused: bool,
         // Addresses
         organizer: ContractAddress,
         // Marketplace whitelist (replaces single marketplace address)
@@ -74,6 +87,8 @@ pub mod EventTicket {
         TicketRevoked: TicketRevoked,
         MarketplaceAdded: MarketplaceAdded,
         MarketplaceRemoved: MarketplaceRemoved,
+        Paused: Paused,
+        Unpaused: Unpaused,
     }
 
     #[derive(Drop, starknet::Event)]
@@ -120,6 +135,12 @@ pub mod EventTicket {
         pub marketplace: ContractAddress,
     }
 
+    #[derive(Drop, starknet::Event)]
+    pub struct Paused {}
+
+    #[derive(Drop, starknet::Event)]
+    pub struct Unpaused {}
+
     #[constructor]
     fn constructor(
         ref self: ContractState,
@@ -150,13 +171,44 @@ pub mod EventTicket {
     #[abi(embed_v0)]
     impl EventTicketImpl of super::IEventTicket<ContractState> {
         fn mint(ref self: ContractState, to: ContractAddress, token_id: u256) {
+            assert(!self.paused.read(), 'CONTRACT_PAUSED');
             assert(get_caller_address() == self.organizer.read(), 'NOT_ORGANIZER');
             assert(!to.is_zero(), 'INVALID_RECIPIENT');
             assert(self.owner_of.read(token_id).is_zero(), 'ALREADY_MINTED');
-            assert(self.total_supply.read() < self.max_supply.read(), 'MAX_SUPPLY');
+            let supply = self.total_supply.read();
+            assert(supply < self.max_supply.read(), 'MAX_SUPPLY');
             self.owner_of.write(token_id, to);
-            self.total_supply.write(self.total_supply.read() + 1_u64);
+            self.total_supply.write(supply + 1_u64);
             self.emit(Event::TicketMinted(TicketMinted { to, token_id }));
+        }
+
+        fn batch_mint(
+            ref self: ContractState, recipients: Span<ContractAddress>, token_ids: Span<u256>,
+        ) {
+            assert(!self.paused.read(), 'CONTRACT_PAUSED');
+            assert(get_caller_address() == self.organizer.read(), 'NOT_ORGANIZER');
+            let len = recipients.len();
+            assert(len == token_ids.len(), 'LENGTH_MISMATCH');
+            assert(len > 0, 'EMPTY_BATCH');
+
+            let mut supply = self.total_supply.read();
+            let max = self.max_supply.read();
+            assert(supply + len.into() <= max, 'MAX_SUPPLY');
+
+            let mut i: u32 = 0;
+            loop {
+                if i >= len {
+                    break;
+                }
+                let to = *recipients.at(i);
+                let token_id = *token_ids.at(i);
+                assert(!to.is_zero(), 'INVALID_RECIPIENT');
+                assert(self.owner_of.read(token_id).is_zero(), 'ALREADY_MINTED');
+                self.owner_of.write(token_id, to);
+                self.emit(Event::TicketMinted(TicketMinted { to, token_id }));
+                i += 1;
+            };
+            self.total_supply.write(supply + len.into());
         }
 
         fn transfer_ticket(
@@ -166,6 +218,7 @@ pub mod EventTicket {
             token_id: u256,
             sale_price: u128,
         ) {
+            assert(!self.paused.read(), 'CONTRACT_PAUSED');
             // Module 6: Soulbound check
             assert(!self.soulbound.read(), 'TICKET_SOULBOUND');
 
@@ -200,6 +253,7 @@ pub mod EventTicket {
         }
 
         fn mark_used(ref self: ContractState, token_id: u256) {
+            assert(!self.paused.read(), 'CONTRACT_PAUSED');
             assert(self.staff_roles.read(get_caller_address()), 'NOT_STAFF');
             assert(!self.used.read(token_id), 'ALREADY_USED');
             self.used.write(token_id, true);
@@ -239,6 +293,7 @@ pub mod EventTicket {
         }
 
         fn revoke_ticket(ref self: ContractState, token_id: u256) {
+            assert(!self.paused.read(), 'CONTRACT_PAUSED');
             assert(get_caller_address() == self.organizer.read(), 'NOT_ORGANIZER');
             assert(!self.owner_of.read(token_id).is_zero(), 'TOKEN_NOT_MINTED');
             self.owner_of.write(token_id, Zero::zero());
@@ -270,6 +325,34 @@ pub mod EventTicket {
 
         fn get_max_transfers(self: @ContractState) -> u32 {
             self.max_transfers.read()
+        }
+
+        // Supply views
+        fn get_total_supply(self: @ContractState) -> u64 {
+            self.total_supply.read()
+        }
+
+        fn get_max_supply(self: @ContractState) -> u64 {
+            self.max_supply.read()
+        }
+
+        // Pause mechanism
+        fn pause(ref self: ContractState) {
+            assert(get_caller_address() == self.organizer.read(), 'NOT_ORGANIZER');
+            assert(!self.paused.read(), 'ALREADY_PAUSED');
+            self.paused.write(true);
+            self.emit(Event::Paused(Paused {}));
+        }
+
+        fn unpause(ref self: ContractState) {
+            assert(get_caller_address() == self.organizer.read(), 'NOT_ORGANIZER');
+            assert(self.paused.read(), 'NOT_PAUSED');
+            self.paused.write(false);
+            self.emit(Event::Unpaused(Unpaused {}));
+        }
+
+        fn is_paused(self: @ContractState) -> bool {
+            self.paused.read()
         }
     }
 }
