@@ -6,7 +6,7 @@ import {
   addMarketplace,
   isMarketplaceAllowed,
 } from "../services/starknet.service";
-import { setTicketCache, bullmqConnection, redis } from "../db/redis";
+import { setTicketCache, bullmqConnection, redis, allocateTokenId, initTokenCounter } from "../db/redis";
 import { logger } from "../config/logger";
 
 const VAULT_ADDRESS = process.env.VAULT_ADDRESS || process.env.DEPLOYER_ADDRESS!;
@@ -79,7 +79,18 @@ const bridgeMintWorker = new Worker<BridgeMintJobData>(
       throw new Error(`Event ${eventId} max supply (${event.maxSupply}) reached`);
     }
 
-    const tokenId = BigInt(event._count.tickets + 1);
+    // SECURITY FIX (CRIT-03): Atomic tokenId allocation via Redis INCR
+    await initTokenCounter(eventId, event._count.tickets);
+    const tokenId = await allocateTokenId(eventId);
+
+    // Double-check supply limit
+    if (tokenId > BigInt(event.maxSupply)) {
+      await prisma.bridgedTicket.update({
+        where: { id: bridgedTicketId },
+        data: { status: "FAILED", errorMessage: "Max supply reached" },
+      });
+      throw new Error(`Event ${eventId} max supply (${event.maxSupply}) reached`);
+    }
 
     try {
       const txHash = await mintTicket(event.contractAddress, VAULT_ADDRESS, tokenId);
@@ -166,8 +177,10 @@ const bridgeClaimWorker = new Worker<BridgeClaimJobData>(
       where: { id: bridgedTicketId },
       include: { ticket: true, event: true },
     });
-    if (!bridgedTicket || bridgedTicket.status !== "MINTED") {
-      logger.info({ bridgedTicketId, status: bridgedTicket?.status }, "Skipping non-MINTED bridge ticket");
+
+    // SECURITY FIX (HIGH-03): Accept CLAIMING status (set atomically by claim route)
+    if (!bridgedTicket || (bridgedTicket.status !== "MINTED" && bridgedTicket.status !== "CLAIMING")) {
+      logger.info({ bridgedTicketId, status: bridgedTicket?.status }, "Skipping bridge ticket not ready for claim");
       return;
     }
 

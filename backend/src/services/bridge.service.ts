@@ -13,14 +13,15 @@ export function verifyBridgeSignature(
 ): boolean {
   if (!signature.startsWith("sha256=")) return false;
 
+  const provided = signature.slice("sha256=".length);
+
+  // SECURITY FIX (MED-05): Validate hex format before Buffer.from to prevent RangeError
+  if (!/^[0-9a-f]{64}$/.test(provided)) return false;
+
   const expected = crypto
     .createHmac("sha256", apiKey)
     .update(rawBody)
     .digest("hex");
-
-  const provided = signature.slice("sha256=".length);
-
-  if (expected.length !== provided.length) return false;
 
   return crypto.timingSafeEqual(
     Buffer.from(expected, "hex"),

@@ -151,6 +151,7 @@ pub mod EventTicket {
     impl EventTicketImpl of super::IEventTicket<ContractState> {
         fn mint(ref self: ContractState, to: ContractAddress, token_id: u256) {
             assert(get_caller_address() == self.organizer.read(), 'NOT_ORGANIZER');
+            assert(!to.is_zero(), 'INVALID_RECIPIENT');
             assert(self.owner_of.read(token_id).is_zero(), 'ALREADY_MINTED');
             assert(self.total_supply.read() < self.max_supply.read(), 'MAX_SUPPLY');
             self.owner_of.write(token_id, to);
@@ -171,6 +172,7 @@ pub mod EventTicket {
             // Module 8: Marketplace whitelist check
             assert(self.allowed_marketplaces.read(get_caller_address()), 'MARKETPLACE_NOT_ALLOWED');
 
+            assert(!to.is_zero(), 'INVALID_RECIPIENT');
             assert(self.owner_of.read(token_id) == from, 'NOT_OWNER');
             assert(!self.used.read(token_id), 'ALREADY_USED');
 
@@ -241,6 +243,7 @@ pub mod EventTicket {
             assert(!self.owner_of.read(token_id).is_zero(), 'TOKEN_NOT_MINTED');
             self.owner_of.write(token_id, Zero::zero());
             self.used.write(token_id, true);
+            self.total_supply.write(self.total_supply.read() - 1_u64);
             self.emit(Event::TicketRevoked(TicketRevoked { token_id }));
         }
 

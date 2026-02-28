@@ -93,7 +93,7 @@ describe("authMiddleware", () => {
 
 describe("organizerOnly", () => {
   it("allows request when user.role is organizer", async () => {
-    const req = mockRequest({}, { userId: "o1", walletAddress: "0x1", role: "organizer" });
+    const req = mockRequest({}, { userId: "o1", walletAddress: "0x1", email: "o@test.com", role: "organizer" });
     const rep = mockReply();
 
     await organizerOnly(req, rep);
@@ -102,7 +102,7 @@ describe("organizerOnly", () => {
   });
 
   it("returns 403 when user.role is fan", async () => {
-    const req = mockRequest({}, { userId: "u1", walletAddress: "0x1", role: "fan" });
+    const req = mockRequest({}, { userId: "u1", walletAddress: "0x1", email: "u@test.com", role: "fan" });
     const rep = mockReply();
 
     await organizerOnly(req, rep);
@@ -111,7 +111,7 @@ describe("organizerOnly", () => {
   });
 
   it("returns 403 when user.role is staff", async () => {
-    const req = mockRequest({}, { userId: "s1", walletAddress: "0x1", role: "staff" });
+    const req = mockRequest({}, { userId: "s1", walletAddress: "0x1", email: "s@test.com", role: "staff" });
     const rep = mockReply();
 
     await organizerOnly(req, rep);
@@ -131,7 +131,7 @@ describe("organizerOnly", () => {
 
 describe("staffOnly", () => {
   it("allows request when user.role is staff", async () => {
-    const req = mockRequest({}, { userId: "s1", walletAddress: "0x1", role: "staff" });
+    const req = mockRequest({}, { userId: "s1", walletAddress: "0x1", email: "s@test.com", role: "staff" });
     const rep = mockReply();
 
     await staffOnly(req, rep);
@@ -140,7 +140,7 @@ describe("staffOnly", () => {
   });
 
   it("allows request when user.role is organizer", async () => {
-    const req = mockRequest({}, { userId: "o1", walletAddress: "0x1", role: "organizer" });
+    const req = mockRequest({}, { userId: "o1", walletAddress: "0x1", email: "o@test.com", role: "organizer" });
     const rep = mockReply();
 
     await staffOnly(req, rep);
@@ -149,7 +149,7 @@ describe("staffOnly", () => {
   });
 
   it("returns 403 when user.role is fan", async () => {
-    const req = mockRequest({}, { userId: "u1", walletAddress: "0x1", role: "fan" });
+    const req = mockRequest({}, { userId: "u1", walletAddress: "0x1", email: "u@test.com", role: "fan" });
     const rep = mockReply();
 
     await staffOnly(req, rep);
@@ -172,6 +172,7 @@ describe("generateToken", () => {
     const payload: JWTPayload = {
       userId: "u1",
       walletAddress: "0xabc",
+      email: "u@test.com",
       role: "fan",
     };
     const token = generateToken(payload);

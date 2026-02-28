@@ -11,6 +11,7 @@ const {
   mockVerifyQRSignature,
   mockIsTimestampValid,
   mockGetTicketCache,
+  mockSetTicketCache,
   mockMarkTicketUsedAtomic,
   mockQueueAdd,
 } = vi.hoisted(() => ({
@@ -20,6 +21,7 @@ const {
   mockVerifyQRSignature: vi.fn(),
   mockIsTimestampValid: vi.fn(),
   mockGetTicketCache: vi.fn(),
+  mockSetTicketCache: vi.fn(),
   mockMarkTicketUsedAtomic: vi.fn(),
   mockQueueAdd: vi.fn(),
 }));
@@ -37,6 +39,7 @@ vi.mock("../../../services/qr.service", () => ({
 
 vi.mock("../../../db/redis", () => ({
   getTicketCache: (...args: any[]) => mockGetTicketCache(...args),
+  setTicketCache: (...args: any[]) => mockSetTicketCache(...args),
   markTicketUsedAtomic: (...args: any[]) => mockMarkTicketUsedAtomic(...args),
   bullmqConnection: { host: "localhost", port: 6379 },
 }));
@@ -67,6 +70,7 @@ beforeAll(async () => {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockSetTicketCache.mockResolvedValue(undefined);
 });
 
 const staffHeaders = { authorization: `Bearer ${makeStaffToken()}` };

@@ -20,7 +20,6 @@ const BridgeWebhookSchema = z.object({
 });
 
 const BridgeClaimSchema = z.object({
-  email: z.string().email().max(320),
   event_id: z.string().uuid().optional(),
 });
 
@@ -61,15 +60,13 @@ async function bridgeWebhookRoute(app: FastifyInstance): Promise<void> {
       return reply.code(400).send({ error: "Invalid payload" });
     }
 
+    // Verify signature BEFORE organizer lookup to prevent oracle attacks
     const organizer = await prisma.organizer.findUnique({
       where: { id: parsed.organizer_id },
     });
-    if (!organizer) {
-      logger.warn({ organizerId: parsed.organizer_id }, "Bridge webhook: organizer not found");
-      return reply.code(200).send({ received: true });
-    }
 
-    if (!verifyBridgeSignature(rawBody, sig, organizer.apiKey)) {
+    // Return uniform response whether organizer exists or not (prevents enumeration)
+    if (!organizer || !verifyBridgeSignature(rawBody, sig, organizer.apiKey)) {
       return reply.code(401).send({ error: "Invalid signature" });
     }
 
@@ -88,33 +85,39 @@ async function bridgeWebhookRoute(app: FastifyInstance): Promise<void> {
       return reply.code(400).send({ error: "Soulbound events cannot be bridged" });
     }
 
-    const existing = await prisma.bridgedTicket.findUnique({
-      where: {
-        externalTicketId_organizerId: {
+    // Idempotent: handle duplicate via try/catch on unique constraint
+    let bridgedTicket;
+    try {
+      bridgedTicket = await prisma.bridgedTicket.create({
+        data: {
           externalTicketId: parsed.external_ticket_id,
+          eventId: parsed.event_id,
           organizerId: organizer.id,
+          ownerEmail: parsed.email,
+          passType: parsed.pass_type ?? null,
+          externalMetadata: parsed.metadata as Prisma.InputJsonValue ?? undefined,
+          status: "PENDING",
         },
-      },
-    });
-    if (existing) {
-      logger.info(
-        { externalTicketId: parsed.external_ticket_id, status: existing.status },
-        "Bridge webhook: duplicate, skipping"
-      );
-      return reply.code(200).send({ received: true, bridgedTicketId: existing.id, status: existing.status });
+      });
+    } catch (err) {
+      // Handle duplicate (unique constraint violation) — idempotent 200
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+        const existing = await prisma.bridgedTicket.findUnique({
+          where: {
+            externalTicketId_organizerId: {
+              externalTicketId: parsed.external_ticket_id,
+              organizerId: organizer.id,
+            },
+          },
+        });
+        logger.info(
+          { externalTicketId: parsed.external_ticket_id, status: existing?.status },
+          "Bridge webhook: duplicate, skipping"
+        );
+        return reply.code(200).send({ received: true, bridgedTicketId: existing?.id, status: existing?.status });
+      }
+      throw err;
     }
-
-    const bridgedTicket = await prisma.bridgedTicket.create({
-      data: {
-        externalTicketId: parsed.external_ticket_id,
-        eventId: parsed.event_id,
-        organizerId: organizer.id,
-        ownerEmail: parsed.email,
-        passType: parsed.pass_type ?? null,
-        externalMetadata: parsed.metadata as Prisma.InputJsonValue ?? undefined,
-        status: "PENDING",
-      },
-    });
 
     await bridgeMintQueue.add("bridgeMint", {
       bridgedTicketId: bridgedTicket.id,
@@ -134,7 +137,7 @@ async function bridgeWebhookRoute(app: FastifyInstance): Promise<void> {
 // ── JSON routes (claim, status, tickets) ──────────────────────────────
 
 async function bridgeJsonRoutes(app: FastifyInstance): Promise<void> {
-  // POST /v1/bridge/claim — User claims bridged tickets
+  // POST /v1/bridge/claim — User claims bridged tickets (uses email from JWT)
   app.post(
     "/v1/bridge/claim",
     { ...bridgeClaimRateLimit, preHandler: [authMiddleware] },
@@ -144,10 +147,17 @@ async function bridgeJsonRoutes(app: FastifyInstance): Promise<void> {
         return reply.code(400).send({ error: "Invalid input" });
       }
 
-      const { email, event_id } = bodyResult.data;
+      const { event_id } = bodyResult.data;
+      // SECURITY FIX (CRIT-01): Use email from verified JWT, not from request body
+      const email = request.user!.email;
       const walletAddress = request.user!.walletAddress;
 
-      const where: Record<string, unknown> = {
+      if (!email) {
+        return reply.code(400).send({ error: "JWT missing email claim" });
+      }
+
+      // Atomically transition MINTED → CLAIMING to prevent double-claim race
+      const where: Prisma.BridgedTicketWhereInput = {
         ownerEmail: email,
         status: "MINTED",
       };
@@ -155,11 +165,23 @@ async function bridgeJsonRoutes(app: FastifyInstance): Promise<void> {
         where.eventId = event_id;
       }
 
-      const bridgedTickets = await prisma.bridgedTicket.findMany({ where });
+      const updated = await prisma.bridgedTicket.updateMany({
+        where,
+        data: { status: "CLAIMING" },
+      });
 
-      if (bridgedTickets.length === 0) {
+      if (updated.count === 0) {
         return reply.code(200).send({ claimed: 0, tickets: [] });
       }
+
+      // Fetch the tickets that were just transitioned to CLAIMING
+      const bridgedTickets = await prisma.bridgedTicket.findMany({
+        where: {
+          ownerEmail: email,
+          status: "CLAIMING",
+          ...(event_id ? { eventId: event_id } : {}),
+        },
+      });
 
       const tickets = [];
       for (const bt of bridgedTickets) {
@@ -184,7 +206,7 @@ async function bridgeJsonRoutes(app: FastifyInstance): Promise<void> {
     }
   );
 
-  // GET /v1/bridge/status/:id — Check bridged ticket status
+  // GET /v1/bridge/status/:id — Check bridged ticket status (ownership check)
   app.get(
     "/v1/bridge/status/:id",
     { preHandler: [authMiddleware] },
@@ -202,7 +224,23 @@ async function bridgeJsonRoutes(app: FastifyInstance): Promise<void> {
         return reply.code(404).send({ error: "Bridged ticket not found" });
       }
 
-      return reply.send(bridgedTicket);
+      // SECURITY FIX (HIGH-07): Only allow owner or claimer to view
+      const userEmail = request.user!.email;
+      const userWallet = request.user!.walletAddress;
+      if (bridgedTicket.ownerEmail !== userEmail && bridgedTicket.claimedByAddress !== userWallet) {
+        return reply.code(404).send({ error: "Bridged ticket not found" });
+      }
+
+      return reply.send({
+        id: bridgedTicket.id,
+        status: bridgedTicket.status,
+        tokenId: bridgedTicket.tokenId,
+        eventId: bridgedTicket.eventId,
+        passType: bridgedTicket.passType,
+        mintTxHash: bridgedTicket.mintTxHash,
+        claimTxHash: bridgedTicket.claimTxHash,
+        createdAt: bridgedTicket.createdAt,
+      });
     }
   );
 
@@ -211,13 +249,14 @@ async function bridgeJsonRoutes(app: FastifyInstance): Promise<void> {
     "/v1/bridge/tickets",
     { preHandler: [authMiddleware] },
     async (request, reply) => {
+      const userEmail = request.user!.email;
       const walletAddress = request.user!.walletAddress;
 
       const bridgedTickets = await prisma.bridgedTicket.findMany({
         where: {
           OR: [
+            { ownerEmail: userEmail },
             { claimedByAddress: walletAddress },
-            { ticket: { ownerAddress: walletAddress } },
           ],
         },
         orderBy: { createdAt: "desc" },

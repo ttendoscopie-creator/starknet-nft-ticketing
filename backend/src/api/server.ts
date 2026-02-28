@@ -28,6 +28,7 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
 
 async function buildApp() {
   const app = Fastify({
+    trustProxy: true, // SECURITY FIX (MED-12): Enable trust proxy for correct IP-based rate limiting
     logger: {
       level: process.env.LOG_LEVEL || "info",
       transport:

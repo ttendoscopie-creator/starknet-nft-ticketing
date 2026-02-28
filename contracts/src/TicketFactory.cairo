@@ -72,6 +72,8 @@ pub mod TicketFactory {
             soulbound: bool,
             max_transfers: u32,
         ) -> ContractAddress {
+            // SECURITY FIX: Only owner can create events via factory
+            assert(get_caller_address() == self.owner.read(), 'NOT_OWNER');
             let organizer = get_caller_address();
             let event_id = self.event_count.read();
 

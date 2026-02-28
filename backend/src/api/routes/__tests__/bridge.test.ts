@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeAll, beforeEach } from "vitest";
 import Fastify from "fastify";
 import type { FastifyInstance } from "fastify";
 import crypto from "node:crypto";
+import { Prisma } from "@prisma/client";
 import { makeToken } from "../../../__tests__/helpers";
 
 // --- Hoisted mocks ---
@@ -14,6 +15,7 @@ const { mockPrisma, mockBridgeMintQueueAdd, mockBridgeClaimQueueAdd } = vi.hoist
       findUnique: vi.fn(),
       findMany: vi.fn(),
       create: vi.fn(),
+      updateMany: vi.fn(),
     },
   },
   mockBridgeMintQueueAdd: vi.fn(),
@@ -111,7 +113,7 @@ describe("POST /v1/bridge/webhook", () => {
     expect(res.json().error).toBe("Invalid payload");
   });
 
-  it("returns 200 when organizer is not found", async () => {
+  it("returns 401 when organizer is not found", async () => {
     const body = JSON.stringify(validWebhookPayload);
     const sig = makeHmacSignature(body, API_KEY);
     mockPrisma.organizer.findUnique.mockResolvedValue(null);
@@ -125,8 +127,8 @@ describe("POST /v1/bridge/webhook", () => {
         "x-bridge-signature": sig,
       },
     });
-    expect(res.statusCode).toBe(200);
-    expect(res.json().received).toBe(true);
+    expect(res.statusCode).toBe(401);
+    expect(res.json().error).toBe("Invalid signature");
   });
 
   it("returns 401 when signature is invalid", async () => {
@@ -166,11 +168,17 @@ describe("POST /v1/bridge/webhook", () => {
     expect(res.json().error).toContain("Soulbound");
   });
 
-  it("returns 200 with idempotent response for duplicate webhook", async () => {
+  it("returns 200 with idempotent response for duplicate webhook (P2002)", async () => {
     const body = JSON.stringify(validWebhookPayload);
     const sig = makeHmacSignature(body, API_KEY);
     mockPrisma.organizer.findUnique.mockResolvedValue(mockOrganizer);
     mockPrisma.event.findUnique.mockResolvedValue(mockEvent);
+    // Simulate unique constraint violation on create using the real Prisma error class
+    const prismaError = new Prisma.PrismaClientKnownRequestError(
+      "Unique constraint failed",
+      { code: "P2002", clientVersion: "5.0.0" }
+    );
+    mockPrisma.bridgedTicket.create.mockRejectedValue(prismaError);
     mockPrisma.bridgedTicket.findUnique.mockResolvedValue({
       id: BRIDGED_TICKET_ID,
       status: "MINTED",
@@ -248,23 +256,25 @@ describe("POST /v1/bridge/claim", () => {
     expect(res.statusCode).toBe(401);
   });
 
-  it("returns 400 when email is invalid", async () => {
+  it("returns 400 when JWT has no email claim", async () => {
+    const noEmailToken = makeToken({ userId: "u1", walletAddress: "0xfan_wallet", role: "fan", email: undefined as any });
     const res = await app.inject({
       method: "POST",
       url: "/v1/bridge/claim",
-      payload: { email: "not-an-email" },
-      headers: { authorization: `Bearer ${fanToken}` },
+      payload: {},
+      headers: { authorization: `Bearer ${noEmailToken}` },
     });
     expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe("JWT missing email claim");
   });
 
   it("returns 200 with claimed:0 when no tickets found", async () => {
-    mockPrisma.bridgedTicket.findMany.mockResolvedValue([]);
+    mockPrisma.bridgedTicket.updateMany.mockResolvedValue({ count: 0 });
 
     const res = await app.inject({
       method: "POST",
       url: "/v1/bridge/claim",
-      payload: { email: "buyer@example.com" },
+      payload: {},
       headers: { authorization: `Bearer ${fanToken}` },
     });
     expect(res.statusCode).toBe(200);
@@ -273,6 +283,7 @@ describe("POST /v1/bridge/claim", () => {
   });
 
   it("queues claim jobs for all MINTED tickets", async () => {
+    mockPrisma.bridgedTicket.updateMany.mockResolvedValue({ count: 2 });
     mockPrisma.bridgedTicket.findMany.mockResolvedValue([
       { id: "bt-1", eventId: EVENT_ID, tokenId: "1", passType: "VIP" },
       { id: "bt-2", eventId: EVENT_ID, tokenId: "2", passType: "GA" },
@@ -282,7 +293,7 @@ describe("POST /v1/bridge/claim", () => {
     const res = await app.inject({
       method: "POST",
       url: "/v1/bridge/claim",
-      payload: { email: "buyer@example.com" },
+      payload: {},
       headers: { authorization: `Bearer ${fanToken}` },
     });
 
@@ -301,22 +312,23 @@ describe("POST /v1/bridge/claim", () => {
   });
 
   it("filters by event_id when provided", async () => {
-    mockPrisma.bridgedTicket.findMany.mockResolvedValue([]);
+    mockPrisma.bridgedTicket.updateMany.mockResolvedValue({ count: 0 });
 
     const res = await app.inject({
       method: "POST",
       url: "/v1/bridge/claim",
-      payload: { email: "buyer@example.com", event_id: EVENT_ID },
+      payload: { event_id: EVENT_ID },
       headers: { authorization: `Bearer ${fanToken}` },
     });
 
     expect(res.statusCode).toBe(200);
-    expect(mockPrisma.bridgedTicket.findMany).toHaveBeenCalledWith({
+    expect(mockPrisma.bridgedTicket.updateMany).toHaveBeenCalledWith({
       where: expect.objectContaining({
-        ownerEmail: "buyer@example.com",
+        ownerEmail: "test@example.com",
         status: "MINTED",
         eventId: EVENT_ID,
       }),
+      data: { status: "CLAIMING" },
     });
   });
 });
@@ -344,20 +356,35 @@ describe("GET /v1/bridge/status/:id", () => {
     expect(res.statusCode).toBe(404);
   });
 
-  it("returns bridged ticket status details", async () => {
+  it("returns 404 when user does not own the bridged ticket", async () => {
+    mockPrisma.bridgedTicket.findUnique.mockResolvedValue({
+      id: BRIDGED_TICKET_ID,
+      ownerEmail: "other@example.com",
+      claimedByAddress: "0xother",
+      status: "MINTED",
+    });
+
+    const res = await app.inject({
+      method: "GET",
+      url: `/v1/bridge/status/${BRIDGED_TICKET_ID}`,
+      headers: { authorization: `Bearer ${fanToken}` },
+    });
+    expect(res.statusCode).toBe(404);
+  });
+
+  it("returns bridged ticket status details when user is owner", async () => {
     mockPrisma.bridgedTicket.findUnique.mockResolvedValue({
       id: BRIDGED_TICKET_ID,
       externalTicketId: "EVT-12345",
-      externalProvider: "generic",
+      ownerEmail: "test@example.com",
       status: "MINTED",
       tokenId: "1",
+      eventId: EVENT_ID,
       passType: "VIP",
       mintTxHash: "0xmint123",
       claimTxHash: null,
       claimedByAddress: null,
-      errorMessage: null,
       createdAt: "2026-01-01T00:00:00.000Z",
-      updatedAt: "2026-01-01T00:00:00.000Z",
     });
 
     const res = await app.inject({
@@ -366,8 +393,12 @@ describe("GET /v1/bridge/status/:id", () => {
       headers: { authorization: `Bearer ${fanToken}` },
     });
     expect(res.statusCode).toBe(200);
-    expect(res.json().status).toBe("MINTED");
-    expect(res.json().mintTxHash).toBe("0xmint123");
+    const body = res.json();
+    expect(body.status).toBe("MINTED");
+    expect(body.mintTxHash).toBe("0xmint123");
+    // Verify limited fields — no externalTicketId or ownerEmail returned
+    expect(body.externalTicketId).toBeUndefined();
+    expect(body.ownerEmail).toBeUndefined();
   });
 });
 

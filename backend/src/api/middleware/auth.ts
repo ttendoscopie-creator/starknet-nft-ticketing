@@ -6,6 +6,7 @@ const JWT_SECRET = process.env.JWT_SECRET!;
 export interface JWTPayload {
   userId: string;
   walletAddress: string;
+  email: string;
   role: "fan" | "organizer" | "staff";
 }
 
@@ -21,21 +22,20 @@ export async function authMiddleware(
 ): Promise<void> {
   const authHeader = request.headers.authorization;
   if (!authHeader?.startsWith("Bearer ")) {
-    reply.code(401).send({ error: "Missing or invalid authorization header" });
-    return;
+    return reply.code(401).send({ error: "Missing or invalid authorization header" });
   }
 
   const token = authHeader.slice(7);
   try {
-    const decoded = jwt.verify(token, JWT_SECRET) as JWTPayload;
+    const decoded = jwt.verify(token, JWT_SECRET, { algorithms: ["HS256"] }) as JWTPayload;
     request.user = decoded;
   } catch {
-    reply.code(401).send({ error: "Invalid or expired token" });
+    return reply.code(401).send({ error: "Invalid or expired token" });
   }
 }
 
 export function generateToken(payload: JWTPayload): string {
-  return jwt.sign(payload, JWT_SECRET, { expiresIn: "24h" });
+  return jwt.sign(payload, JWT_SECRET, { expiresIn: "24h", algorithm: "HS256" });
 }
 
 export async function organizerOnly(
@@ -43,7 +43,7 @@ export async function organizerOnly(
   reply: FastifyReply
 ): Promise<void> {
   if (!request.user || request.user.role !== "organizer") {
-    reply.code(403).send({ error: "Organizer access required" });
+    return reply.code(403).send({ error: "Organizer access required" });
   }
 }
 
@@ -52,6 +52,6 @@ export async function staffOnly(
   reply: FastifyReply
 ): Promise<void> {
   if (!request.user || (request.user.role !== "staff" && request.user.role !== "organizer")) {
-    reply.code(403).send({ error: "Staff access required" });
+    return reply.code(403).send({ error: "Staff access required" });
   }
 }

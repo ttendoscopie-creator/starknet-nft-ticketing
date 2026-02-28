@@ -1,7 +1,7 @@
 import { Worker, Job } from "bullmq";
 import { prisma } from "../db/prisma";
 import { mintTicket } from "../services/starknet.service";
-import { setTicketCache, bullmqConnection } from "../db/redis";
+import { setTicketCache, bullmqConnection, allocateTokenId, initTokenCounter } from "../db/redis";
 import { logger } from "../config/logger";
 
 interface MintJobData {
@@ -51,7 +51,19 @@ const mintWorker = new Worker<MintJobData>(
       throw new Error(`Event ${eventId} max supply (${event.maxSupply}) reached`);
     }
 
-    const tokenId = BigInt(event._count.tickets + 1);
+    // SECURITY FIX (CRIT-03): Atomic tokenId allocation via Redis INCR
+    await initTokenCounter(eventId, event._count.tickets);
+    const tokenId = await allocateTokenId(eventId);
+
+    // Double-check supply limit with allocated tokenId
+    if (tokenId > BigInt(event.maxSupply)) {
+      await prisma.pendingMint.update({
+        where: { id: pendingMintId },
+        data: { status: "FAILED" },
+      });
+      throw new Error(`Event ${eventId} max supply (${event.maxSupply}) reached`);
+    }
+
     const walletAddress = buyerWalletAddress;
 
     try {

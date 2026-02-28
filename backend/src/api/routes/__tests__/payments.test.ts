@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeAll, beforeEach } from "vitest";
 import Fastify from "fastify";
 import type { FastifyInstance } from "fastify";
+import { Prisma } from "@prisma/client";
 import { makeToken, makeOrganizerToken } from "../../../__tests__/helpers";
 
 // Mock Prisma
@@ -50,6 +51,7 @@ const mockEvent = {
   contractAddress: "0xcontract",
   primaryPrice: BigInt(1000000),
   acceptedCurrencies: ["STRK", "USDC"],
+  organizer: { treasuryAddress: "0xtreasury" },
 };
 
 describe("POST /v1/payments/verify-crypto", () => {
@@ -83,7 +85,6 @@ describe("POST /v1/payments/verify-crypto", () => {
   });
 
   it("returns 400 when event does not accept currency", async () => {
-    mockPrisma.pendingMint.findFirst.mockResolvedValue(null);
     mockPrisma.event.findUnique.mockResolvedValue({
       ...mockEvent,
       acceptedCurrencies: ["STRK"],
@@ -100,7 +101,6 @@ describe("POST /v1/payments/verify-crypto", () => {
   });
 
   it("returns 400 when tx verification fails", async () => {
-    mockPrisma.pendingMint.findFirst.mockResolvedValue(null);
     mockPrisma.event.findUnique.mockResolvedValue(mockEvent);
     mockVerifyERC20Transfer.mockResolvedValue(false);
 
@@ -114,12 +114,14 @@ describe("POST /v1/payments/verify-crypto", () => {
     expect(res.json().error).toBe("Transaction verification failed");
   });
 
-  it("returns 409 when tx hash already used", async () => {
-    mockPrisma.pendingMint.findFirst.mockResolvedValue({
-      id: "existing-mint",
-      cryptoTxHash: validPayment.txHash,
-    });
+  it("returns 409 when tx hash already used (P2002)", async () => {
     mockPrisma.event.findUnique.mockResolvedValue(mockEvent);
+    mockVerifyERC20Transfer.mockResolvedValue(true);
+    const prismaError = new Prisma.PrismaClientKnownRequestError(
+      "Unique constraint failed",
+      { code: "P2002", clientVersion: "5.0.0" }
+    );
+    mockPrisma.pendingMint.create.mockRejectedValue(prismaError);
 
     const res = await app.inject({
       method: "POST",
@@ -132,7 +134,6 @@ describe("POST /v1/payments/verify-crypto", () => {
   });
 
   it("returns 201 on successful USDC verification", async () => {
-    mockPrisma.pendingMint.findFirst.mockResolvedValue(null);
     mockPrisma.event.findUnique.mockResolvedValue(mockEvent);
     mockVerifyERC20Transfer.mockResolvedValue(true);
     mockPrisma.pendingMint.create.mockResolvedValue({
@@ -152,9 +153,10 @@ describe("POST /v1/payments/verify-crypto", () => {
     expect(res.json().currency).toBe("USDC");
     expect(mockVerifyERC20Transfer).toHaveBeenCalledWith(
       validPayment.txHash,
-      "0xcontract",
+      "0xtreasury",
       BigInt(1000000),
       expect.stringContaining("0x053b40a647"),
+      validPayment.buyerWalletAddress,
     );
   });
 });

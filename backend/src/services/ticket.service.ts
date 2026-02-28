@@ -45,19 +45,31 @@ export async function updateTicketStatus(
   });
 }
 
-export async function getTicketsByOwner(ownerAddress: string) {
-  return prisma.ticket.findMany({
-    where: { ownerAddress },
-    include: { event: true },
-    orderBy: { updatedAt: "desc" },
-  });
+export async function getTicketsByOwner(ownerAddress: string, skip = 0, take = 20) {
+  const [tickets, total] = await Promise.all([
+    prisma.ticket.findMany({
+      where: { ownerAddress },
+      include: { event: true },
+      orderBy: { updatedAt: "desc" },
+      skip,
+      take,
+    }),
+    prisma.ticket.count({ where: { ownerAddress } }),
+  ]);
+  return { tickets, total };
 }
 
-export async function getTicketsByEvent(eventId: string) {
-  return prisma.ticket.findMany({
-    where: { eventId },
-    orderBy: { tokenId: "asc" },
-  });
+export async function getTicketsByEvent(eventId: string, skip = 0, take = 20) {
+  const [tickets, total] = await Promise.all([
+    prisma.ticket.findMany({
+      where: { eventId },
+      orderBy: { tokenId: "asc" },
+      skip,
+      take,
+    }),
+    prisma.ticket.count({ where: { eventId } }),
+  ]);
+  return { tickets, total };
 }
 
 export async function logScan(params: {
@@ -92,4 +104,3 @@ export async function revokeTicket(ticketId: string, txHash?: string) {
     }),
   ]);
 }
-

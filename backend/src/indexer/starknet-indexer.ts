@@ -96,6 +96,7 @@ async function processTicketTransferred(
       data: {
         ownerAddress: toAddress,
         status: "AVAILABLE",
+        transferCount: { increment: 1 },
       },
     });
 

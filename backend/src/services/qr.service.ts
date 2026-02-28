@@ -39,7 +39,8 @@ export function verifyQRSignature(
 
 export function isTimestampValid(timestamp: number, windowSeconds = 30): boolean {
   const now = Math.floor(Date.now() / 1000);
-  return now - timestamp <= windowSeconds;
+  // SECURITY FIX (MED-09): Check both bounds — reject future timestamps too
+  return Math.abs(now - timestamp) <= windowSeconds;
 }
 
 export async function generateQRDataUrl(ticketId: string): Promise<string> {

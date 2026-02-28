@@ -66,9 +66,11 @@ fn test_setup_organizer_and_sponsor_success() {
     let (dispatcher, _) = setup_sponsored_user();
     let addr = dispatcher.contract_address;
 
+    start_cheat_caller_address(addr, user());
     start_cheat_block_timestamp(addr, 86400);
     dispatcher.validate_and_pay(user(), 50000_u256);
     stop_cheat_block_timestamp(addr);
+    stop_cheat_caller_address(addr);
 
     // Verify budget tracking
     let (budget, spent) = dispatcher.get_organizer_budget(organizer1());
@@ -83,12 +85,14 @@ fn test_validate_not_sponsored_fails() {
     let (_, safe) = deploy_paymaster();
     let addr = safe.contract_address;
 
+    start_cheat_caller_address(addr, user());
     start_cheat_block_timestamp(addr, 86400);
     match safe.validate_and_pay(user(), 50000_u256) {
         Result::Ok(_) => panic!("Should have failed with NOT_SPONSORED"),
         Result::Err(err) => assert(*err.at(0) == 'NOT_SPONSORED', 'Wrong error code'),
     }
     stop_cheat_block_timestamp(addr);
+    stop_cheat_caller_address(addr);
 }
 
 // TEST 3: validate_and_pay when organizer inactive -> ORGANIZER_INACTIVE
@@ -103,12 +107,14 @@ fn test_validate_organizer_inactive_fails() {
     dispatcher.deactivate_organizer(organizer1());
     stop_cheat_caller_address(addr);
 
+    start_cheat_caller_address(addr, user());
     start_cheat_block_timestamp(addr, 86400);
     match safe.validate_and_pay(user(), 50000_u256) {
         Result::Ok(_) => panic!("Should have failed with ORGANIZER_INACTIVE"),
         Result::Err(err) => assert(*err.at(0) == 'ORGANIZER_INACTIVE', 'Wrong error code'),
     }
     stop_cheat_block_timestamp(addr);
+    stop_cheat_caller_address(addr);
 }
 
 // TEST 4: Gas too high -> GAS_TOO_HIGH
@@ -118,12 +124,14 @@ fn test_validate_gas_too_high_fails() {
     let (_, safe) = setup_sponsored_user();
     let addr = safe.contract_address;
 
+    start_cheat_caller_address(addr, user());
     start_cheat_block_timestamp(addr, 86400);
     match safe.validate_and_pay(user(), 200000_u256) {
         Result::Ok(_) => panic!("Should have failed with GAS_TOO_HIGH"),
         Result::Err(err) => assert(*err.at(0) == 'GAS_TOO_HIGH', 'Wrong error code'),
     }
     stop_cheat_block_timestamp(addr);
+    stop_cheat_caller_address(addr);
 }
 
 // TEST 5: Anti-spam interval -> TOO_FREQUENT
@@ -134,6 +142,7 @@ fn test_validate_anti_spam_interval_fails() {
     let addr = dispatcher.contract_address;
 
     // First call at t=86400
+    start_cheat_caller_address(addr, user());
     start_cheat_block_timestamp(addr, 86400);
     dispatcher.validate_and_pay(user(), 10000_u256);
     stop_cheat_block_timestamp(addr);
@@ -145,6 +154,7 @@ fn test_validate_anti_spam_interval_fails() {
         Result::Err(err) => assert(*err.at(0) == 'TOO_FREQUENT', 'Wrong error code'),
     }
     stop_cheat_block_timestamp(addr);
+    stop_cheat_caller_address(addr);
 }
 
 // TEST 6: Anti-spam daily tx count -> DAILY_TX_LIMIT
@@ -162,6 +172,7 @@ fn test_validate_anti_spam_daily_count_fails() {
 
     // Exhaust daily tx count (10 txs, each MIN_INTERVAL apart)
     let base_time: u64 = 86400;
+    start_cheat_caller_address(addr, user());
     let mut i: u64 = 0;
     loop {
         if i >= MAX_TXS_PER_DAY {
@@ -180,6 +191,7 @@ fn test_validate_anti_spam_daily_count_fails() {
         Result::Err(err) => assert(*err.at(0) == 'DAILY_TX_LIMIT', 'Wrong error code'),
     }
     stop_cheat_block_timestamp(addr);
+    stop_cheat_caller_address(addr);
 }
 
 // TEST 7: Per-organizer daily limit -> ORG_DAILY_LIMIT
@@ -188,6 +200,8 @@ fn test_validate_anti_spam_daily_count_fails() {
 fn test_validate_organizer_daily_limit_fails() {
     let (dispatcher, safe) = setup_sponsored_user();
     let addr = dispatcher.contract_address;
+
+    start_cheat_caller_address(addr, user());
 
     // daily_limit = 200000, spend 200000 in two calls
     start_cheat_block_timestamp(addr, 86400);
@@ -205,6 +219,7 @@ fn test_validate_organizer_daily_limit_fails() {
         Result::Err(err) => assert(*err.at(0) == 'ORG_DAILY_LIMIT', 'Wrong error code'),
     }
     stop_cheat_block_timestamp(addr);
+    stop_cheat_caller_address(addr);
 }
 
 // TEST 8: Budget exceeded -> BUDGET_EXCEEDED
@@ -221,6 +236,7 @@ fn test_validate_budget_exceeded_fails() {
     stop_cheat_caller_address(addr);
 
     // First call uses up 50k
+    start_cheat_caller_address(addr, user());
     start_cheat_block_timestamp(addr, 86400);
     dispatcher.validate_and_pay(user(), 50000_u256);
     stop_cheat_block_timestamp(addr);
@@ -232,6 +248,7 @@ fn test_validate_budget_exceeded_fails() {
         Result::Err(err) => assert(*err.at(0) == 'BUDGET_EXCEEDED', 'Wrong error code'),
     }
     stop_cheat_block_timestamp(addr);
+    stop_cheat_caller_address(addr);
 }
 
 // TEST 9: Organizer daily limit resets next day
@@ -239,6 +256,8 @@ fn test_validate_budget_exceeded_fails() {
 fn test_organizer_daily_limit_resets() {
     let (dispatcher, _) = setup_sponsored_user();
     let addr = dispatcher.contract_address;
+
+    start_cheat_caller_address(addr, user());
 
     // Use up daily limit on day 1
     start_cheat_block_timestamp(addr, 86400);
@@ -255,6 +274,7 @@ fn test_organizer_daily_limit_resets() {
     // Should succeed — daily limit reset
     dispatcher.validate_and_pay(user(), 50000_u256);
     stop_cheat_block_timestamp(addr);
+    stop_cheat_caller_address(addr);
 }
 
 // TEST 10: Deactivate organizer blocks validate_and_pay
@@ -302,12 +322,14 @@ fn test_unsponsor_account_success() {
     stop_cheat_caller_address(addr);
 
     // Now validate should fail
+    start_cheat_caller_address(addr, user());
     start_cheat_block_timestamp(addr, 86400);
     match safe.validate_and_pay(user(), 50000_u256) {
         Result::Ok(_) => panic!("Should have failed with NOT_SPONSORED"),
         Result::Err(err) => assert(*err.at(0) == 'NOT_SPONSORED', 'Wrong error code'),
     }
     stop_cheat_block_timestamp(addr);
+    stop_cheat_caller_address(addr);
 }
 
 // ═══════════════════════════════════════════════════════

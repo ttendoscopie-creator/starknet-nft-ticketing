@@ -225,6 +225,10 @@ pub mod AccountContract {
             assert(get_caller_address().is_zero(), 'INVALID_CALLER');
             assert(!new_pubkey.is_zero(), 'INVALID_PUBKEY');
             self.owner_pubkey.write(new_pubkey);
+            // SECURITY FIX: Revoke session keys on key rotation to prevent old sessions
+            self.session_pubkey.write(0);
+            self.session_expiry.write(0);
+            self.session_scope.write(0);
             self.emit(Event::OwnerKeyRotated(OwnerKeyRotated { new_pubkey }));
         }
 

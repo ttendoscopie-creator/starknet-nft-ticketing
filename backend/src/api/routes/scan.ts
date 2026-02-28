@@ -1,7 +1,7 @@
 import { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { getTicketById, logScan, updateTicketStatus } from "../../services/ticket.service";
-import { getTicketCache, markTicketUsedAtomic } from "../../db/redis";
+import { getTicketCache, markTicketUsedAtomic, setTicketCache } from "../../db/redis";
 import { verifyQRSignature, isTimestampValid } from "../../services/qr.service";
 import { Queue } from "bullmq";
 import { bullmqConnection } from "../../db/redis";
@@ -34,7 +34,7 @@ export async function scanRoutes(app: FastifyInstance): Promise<void> {
 
     const { ticket_id, signature, timestamp, gate_id } = parseResult.data;
 
-    // 1. Check timestamp (30s window)
+    // 1. Check timestamp (30s window, both bounds)
     if (!isTimestampValid(timestamp, 30)) {
       return reply.code(200).send({ valid: false, reason: "QR_EXPIRED" });
     }
@@ -58,13 +58,32 @@ export async function scanRoutes(app: FastifyInstance): Promise<void> {
       };
     }
 
-    // 4. Check not already used via Redis SETNX (atomic)
+    // 3b. SECURITY FIX (HIGH-05): Check ticket status before allowing scan
+    if (ticketData.status === "USED" || ticketData.status === "REVOKED" || ticketData.status === "CANCELLED") {
+      return reply.code(200).send({ valid: false, reason: "TICKET_NOT_VALID", status: ticketData.status });
+    }
+    if (ticketData.status === "LISTED") {
+      return reply.code(200).send({ valid: false, reason: "TICKET_LISTED" });
+    }
+
+    // 4. Check not already used via Redis SET NX (atomic)
     const claimed = await markTicketUsedAtomic(ticket_id);
     if (!claimed) {
       return reply.code(200).send({ valid: false, reason: "ALREADY_USED" });
     }
 
-    // 5. Log scan async (fire-and-forget)
+    // 5. SECURITY FIX (HIGH-04): Synchronous DB status update (not fire-and-forget)
+    try {
+      await updateTicketStatus(ticket_id, "USED");
+    } catch (err) {
+      app.log.error({ err, ticket_id }, "Failed to update ticket status in DB");
+      // Don't fail the scan — Redis SETNX is the primary guard
+    }
+
+    // 6. Update cache to reflect USED status
+    await setTicketCache(ticket_id, { ...ticketData, status: "USED" }).catch(() => {});
+
+    // 7. Log scan (still fire-and-forget — it's audit, not critical path)
     logScan({
       ticketId: ticket_id,
       gateId: gate_id,
@@ -72,15 +91,10 @@ export async function scanRoutes(app: FastifyInstance): Promise<void> {
       app.log.error({ err, ticket_id }, "Failed to log scan");
     });
 
-    // 6. Update DB status async
-    updateTicketStatus(ticket_id, "USED").catch((err: unknown) => {
-      app.log.error({ err, ticket_id }, "Failed to update ticket status");
-    });
-
-    // 7. Queue on-chain mark_used
+    // 8. Queue on-chain mark_used
     await markUsedQueue.add("markUsed", { ticketId: ticket_id });
 
-    // 8. Return valid
+    // 9. Return valid
     app.log.info({ ticket_id, gate_id }, "Ticket scan valid");
     return reply.code(200).send({
       valid: true,

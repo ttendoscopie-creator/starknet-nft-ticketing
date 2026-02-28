@@ -53,35 +53,24 @@ describe("setTicketCache", () => {
 });
 
 describe("markTicketUsedAtomic", () => {
-  it("returns true when SETNX returns 1 (first scan)", async () => {
-    mockRedisInstance.setnx.mockResolvedValue(1);
+  it("returns true when SET NX returns OK (first scan)", async () => {
+    mockRedisInstance.set.mockResolvedValue("OK");
 
     const result = await markTicketUsedAtomic("t1");
     expect(result).toBe(true);
-    expect(mockRedisInstance.setnx).toHaveBeenCalledWith(
+    expect(mockRedisInstance.set).toHaveBeenCalledWith(
       "ticket_used:t1",
-      expect.any(String)
+      expect.any(String),
+      "EX",
+      604800,
+      "NX"
     );
   });
 
-  it("sets 86400s expiry after successful SETNX", async () => {
-    mockRedisInstance.setnx.mockResolvedValue(1);
-
-    await markTicketUsedAtomic("t1");
-    expect(mockRedisInstance.expire).toHaveBeenCalledWith("ticket_used:t1", 86400);
-  });
-
-  it("returns false when SETNX returns 0 (double scan)", async () => {
-    mockRedisInstance.setnx.mockResolvedValue(0);
+  it("returns false when SET NX returns null (double scan)", async () => {
+    mockRedisInstance.set.mockResolvedValue(null);
 
     const result = await markTicketUsedAtomic("t1");
     expect(result).toBe(false);
-  });
-
-  it("does not call expire when SETNX returns 0", async () => {
-    mockRedisInstance.setnx.mockResolvedValue(0);
-
-    await markTicketUsedAtomic("t1");
-    expect(mockRedisInstance.expire).not.toHaveBeenCalled();
   });
 });

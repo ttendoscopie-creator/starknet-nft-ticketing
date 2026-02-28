@@ -37,7 +37,7 @@ fn deploy_factory() -> ITicketFactoryDispatcher {
 fn test_create_event_success() {
     let factory = deploy_factory();
 
-    start_cheat_caller_address(factory.contract_address, organizer());
+    start_cheat_caller_address(factory.contract_address, owner());
     let event_addr = factory
         .create_event(100_u64, 1000000_u128, 11000_u16, 1000_u16, marketplace_addr(), false, 0_u32);
     stop_cheat_caller_address(factory.contract_address);
@@ -52,7 +52,7 @@ fn test_create_event_success() {
 fn test_create_multiple_events() {
     let factory = deploy_factory();
 
-    start_cheat_caller_address(factory.contract_address, organizer());
+    start_cheat_caller_address(factory.contract_address, owner());
     let addr1 = factory
         .create_event(50_u64, 500000_u128, 11000_u16, 500_u16, marketplace_addr(), false, 0_u32);
     let addr2 = factory
@@ -70,13 +70,13 @@ fn test_create_multiple_events() {
 fn test_deployed_ticket_is_functional() {
     let factory = deploy_factory();
 
-    start_cheat_caller_address(factory.contract_address, organizer());
+    start_cheat_caller_address(factory.contract_address, owner());
     let event_addr = factory
         .create_event(100_u64, 1000000_u128, 11000_u16, 1000_u16, marketplace_addr(), false, 0_u32);
     stop_cheat_caller_address(factory.contract_address);
 
     let ticket = IEventTicketDispatcher { contract_address: event_addr };
-    start_cheat_caller_address(event_addr, organizer());
+    start_cheat_caller_address(event_addr, owner());
     ticket.mint(buyer(), 1_u256);
     stop_cheat_caller_address(event_addr);
 
@@ -90,7 +90,7 @@ fn test_create_event_emits_event() {
     let factory = deploy_factory();
     let mut spy = spy_events();
 
-    start_cheat_caller_address(factory.contract_address, organizer());
+    start_cheat_caller_address(factory.contract_address, owner());
     let event_addr = factory
         .create_event(100_u64, 1000000_u128, 11000_u16, 1000_u16, marketplace_addr(), false, 0_u32);
     stop_cheat_caller_address(factory.contract_address);
@@ -102,7 +102,7 @@ fn test_create_event_emits_event() {
                     factory.contract_address,
                     starknet_nft_ticketing::TicketFactory::TicketFactory::Event::EventCreated(
                         starknet_nft_ticketing::TicketFactory::TicketFactory::EventCreated {
-                            event_id: 0_u256, contract_address: event_addr, organizer: organizer(),
+                            event_id: 0_u256, contract_address: event_addr, organizer: owner(),
                         },
                     ),
                 ),
@@ -126,7 +126,7 @@ fn test_event_count_starts_at_zero() {
 fn test_create_soulbound_event() {
     let factory = deploy_factory();
 
-    start_cheat_caller_address(factory.contract_address, organizer());
+    start_cheat_caller_address(factory.contract_address, owner());
     let event_addr = factory
         .create_event(100_u64, 1000000_u128, 11000_u16, 1000_u16, marketplace_addr(), true, 0_u32);
     stop_cheat_caller_address(factory.contract_address);
@@ -140,7 +140,7 @@ fn test_create_soulbound_event() {
 fn test_create_event_with_transfer_limit() {
     let factory = deploy_factory();
 
-    start_cheat_caller_address(factory.contract_address, organizer());
+    start_cheat_caller_address(factory.contract_address, owner());
     let event_addr = factory
         .create_event(100_u64, 1000000_u128, 11000_u16, 1000_u16, marketplace_addr(), false, 3_u32);
     stop_cheat_caller_address(factory.contract_address);

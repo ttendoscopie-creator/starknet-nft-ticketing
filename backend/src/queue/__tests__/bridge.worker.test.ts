@@ -11,6 +11,8 @@ const {
   mockSetTicketCache,
   mockRedisGet,
   mockRedisSet,
+  mockInitTokenCounter,
+  mockAllocateTokenId,
 } = vi.hoisted(() => ({
   mockPrisma: {
     bridgedTicket: {
@@ -32,6 +34,8 @@ const {
   mockSetTicketCache: vi.fn(),
   mockRedisGet: vi.fn(),
   mockRedisSet: vi.fn(),
+  mockInitTokenCounter: vi.fn(),
+  mockAllocateTokenId: vi.fn(),
 }));
 
 vi.mock("../../db/prisma", () => ({
@@ -47,6 +51,8 @@ vi.mock("../../services/starknet.service", () => ({
 
 vi.mock("../../db/redis", () => ({
   setTicketCache: (...args: any[]) => mockSetTicketCache(...args),
+  initTokenCounter: (...args: any[]) => mockInitTokenCounter(...args),
+  allocateTokenId: (...args: any[]) => mockAllocateTokenId(...args),
   bullmqConnection: { host: "localhost", port: 6379 },
   redis: { get: mockRedisGet, set: mockRedisSet },
 }));
@@ -83,6 +89,8 @@ beforeEach(() => {
   mockRedisGet.mockResolvedValue(null);
   mockRedisSet.mockResolvedValue("OK");
   mockSetTicketCache.mockResolvedValue(undefined);
+  mockInitTokenCounter.mockResolvedValue(undefined);
+  mockAllocateTokenId.mockResolvedValue(BigInt(6));
 });
 
 // ── Bridge Mint Worker ────────────────────────────────────────────────

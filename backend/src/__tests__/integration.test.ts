@@ -183,6 +183,7 @@ describe("Integration: Event → Mint → Scan → Mark Used", () => {
     // These are called with .catch() in scan.ts, so they must return Promises
     mockLogScan.mockResolvedValue({});
     mockUpdateTicketStatus.mockResolvedValue({});
+    mockSetTicketCache.mockResolvedValue(undefined);
     mockGetTicketById.mockResolvedValue(null);
   });
 
@@ -337,14 +338,13 @@ describe("Integration: Event → Mint → Scan → Mark Used", () => {
 
   // ── Step 5: Double-scan is rejected ──
 
-  it("Step 5: re-scanning the same ticket returns ALREADY_USED", async () => {
+  it("Step 5: re-scanning the same ticket returns TICKET_NOT_VALID (status check)", async () => {
     mockIsTimestampValid.mockReturnValue(true);
     mockVerifyQRSignature.mockReturnValue(true);
     mockGetTicketCache.mockResolvedValue({
       status: "USED",
       ownerAddress: "0xbuyer_wallet",
     });
-    mockMarkTicketUsedAtomic.mockResolvedValue(false); // already claimed
 
     const res = await app.inject({
       method: "POST",
@@ -359,7 +359,8 @@ describe("Integration: Event → Mint → Scan → Mark Used", () => {
 
     expect(res.statusCode).toBe(200);
     expect(res.json().valid).toBe(false);
-    expect(res.json().reason).toBe("ALREADY_USED");
+    expect(res.json().reason).toBe("TICKET_NOT_VALID");
+    expect(res.json().status).toBe("USED");
   });
 
   // ── Step 6: Duplicate webhook is idempotent ──

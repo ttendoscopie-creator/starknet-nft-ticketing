@@ -1,5 +1,6 @@
 import { FastifyInstance } from "fastify";
 import { z } from "zod";
+import { Prisma } from "@prisma/client";
 import { prisma } from "../../db/prisma";
 import { authMiddleware } from "../middleware/auth";
 import { verifyERC20Transfer } from "../../services/starknet.service";
@@ -30,7 +31,10 @@ export async function paymentRoutes(app: FastifyInstance): Promise<void> {
     const { eventId, txHash, buyerWalletAddress, currency } = parseResult.data;
 
     // Verify event exists and accepts this currency
-    const event = await prisma.event.findUnique({ where: { id: eventId } });
+    const event = await prisma.event.findUnique({
+      where: { id: eventId },
+      include: { organizer: true },
+    });
     if (!event) {
       return reply.code(404).send({ error: "Event not found" });
     }
@@ -39,39 +43,43 @@ export async function paymentRoutes(app: FastifyInstance): Promise<void> {
       return reply.code(400).send({ error: `Event does not accept ${currency}` });
     }
 
-    // Prevent tx hash replay
-    const existingMint = await prisma.pendingMint.findFirst({
-      where: { cryptoTxHash: txHash },
-    });
-    if (existingMint) {
-      return reply.code(409).send({ error: "Transaction already used for a previous payment" });
-    }
+    // SECURITY FIX (CRIT-06): Payment goes to organizer treasury, not contract address
+    const paymentRecipient = event.organizer.treasuryAddress;
 
-    // Verify the on-chain transfer
+    // Verify the on-chain transfer with sender validation
     const tokenAddress = TOKEN_ADDRESSES[currency];
     const verified = await verifyERC20Transfer(
       txHash,
-      event.contractAddress,
+      paymentRecipient,
       BigInt(event.primaryPrice),
       tokenAddress,
+      buyerWalletAddress, // SECURITY FIX (HIGH-14): Validate sender matches buyer
     );
 
     if (!verified) {
       return reply.code(400).send({ error: "Transaction verification failed" });
     }
 
-    // Create PendingMint for crypto payment
-    const pendingMint = await prisma.pendingMint.create({
-      data: {
-        eventId,
-        buyerEmail: request.user!.userId,
-        buyerWalletAddress,
-        cryptoTxHash: txHash,
-        paymentAmount: event.primaryPrice,
-        paymentCurrency: currency,
-        status: "PENDING",
-      },
-    });
+    // SECURITY FIX (HIGH-11): Catch unique constraint to handle TOCTOU race
+    let pendingMint;
+    try {
+      pendingMint = await prisma.pendingMint.create({
+        data: {
+          eventId,
+          buyerEmail: request.user!.userId,
+          buyerWalletAddress,
+          cryptoTxHash: txHash,
+          paymentAmount: event.primaryPrice,
+          paymentCurrency: currency,
+          status: "PENDING",
+        },
+      });
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+        return reply.code(409).send({ error: "Transaction already used for a previous payment" });
+      }
+      throw err;
+    }
 
     return reply.code(201).send({
       id: pendingMint.id,

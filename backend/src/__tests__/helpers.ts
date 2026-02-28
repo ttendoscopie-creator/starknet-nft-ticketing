@@ -7,6 +7,7 @@ export function makeToken(overrides: Partial<JWTPayload> = {}): string {
   const payload: JWTPayload = {
     userId: "user-1",
     walletAddress: "0xabc123",
+    email: "test@example.com",
     role: "fan",
     ...overrides,
   };
@@ -23,7 +24,7 @@ export function makeStaffToken(): string {
 
 export function makeExpiredToken(): string {
   return jwt.sign(
-    { userId: "user-1", walletAddress: "0xabc123", role: "fan" as const },
+    { userId: "user-1", walletAddress: "0xabc123", email: "test@example.com", role: "fan" as const },
     JWT_SECRET,
     { expiresIn: "-1s" }
   );

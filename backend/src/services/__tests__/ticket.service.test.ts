@@ -7,6 +7,7 @@ const { mockPrisma } = vi.hoisted(() => ({
       findUnique: vi.fn(),
       findMany: vi.fn(),
       update: vi.fn(),
+      count: vi.fn(),
     },
     scanLog: {
       create: vi.fn(),
@@ -121,25 +122,35 @@ describe("updateTicketStatus", () => {
 });
 
 describe("getTicketsByOwner", () => {
-  it("calls findMany filtered by ownerAddress, ordered by updatedAt desc", async () => {
+  it("calls findMany filtered by ownerAddress with pagination, returns { tickets, total }", async () => {
     mockPrisma.ticket.findMany.mockResolvedValue([]);
-    await getTicketsByOwner("0xabc");
+    mockPrisma.ticket.count.mockResolvedValue(0);
+    const result = await getTicketsByOwner("0xabc");
     expect(mockPrisma.ticket.findMany).toHaveBeenCalledWith({
       where: { ownerAddress: "0xabc" },
       include: { event: true },
       orderBy: { updatedAt: "desc" },
+      skip: 0,
+      take: 20,
     });
+    expect(mockPrisma.ticket.count).toHaveBeenCalledWith({ where: { ownerAddress: "0xabc" } });
+    expect(result).toEqual({ tickets: [], total: 0 });
   });
 });
 
 describe("getTicketsByEvent", () => {
-  it("calls findMany filtered by eventId, ordered by tokenId asc", async () => {
+  it("calls findMany filtered by eventId with pagination, returns { tickets, total }", async () => {
     mockPrisma.ticket.findMany.mockResolvedValue([]);
-    await getTicketsByEvent("e1");
+    mockPrisma.ticket.count.mockResolvedValue(0);
+    const result = await getTicketsByEvent("e1");
     expect(mockPrisma.ticket.findMany).toHaveBeenCalledWith({
       where: { eventId: "e1" },
       orderBy: { tokenId: "asc" },
+      skip: 0,
+      take: 20,
     });
+    expect(mockPrisma.ticket.count).toHaveBeenCalledWith({ where: { eventId: "e1" } });
+    expect(result).toEqual({ tickets: [], total: 0 });
   });
 });
 

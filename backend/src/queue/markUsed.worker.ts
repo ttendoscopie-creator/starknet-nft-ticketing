@@ -1,30 +1,43 @@
 import { Worker, Job } from "bullmq";
 import { prisma } from "../db/prisma";
 import { markUsedBatch } from "../services/starknet.service";
-import { bullmqConnection } from "../db/redis";
+import { bullmqConnection, redis } from "../db/redis";
 import { logger } from "../config/logger";
 
 interface MarkUsedJobData {
   ticketId: string;
 }
 
-// Batch mark_used calls for gas efficiency
-const pendingTokenIds: Map<string, { contractAddress: string; tokenId: bigint }> = new Map();
-let batchTimer: ReturnType<typeof setTimeout> | null = null;
+// SECURITY FIX (HIGH-16): Use Redis-based batch instead of in-memory Map
+// In-memory state is lost on worker crash/restart, causing tickets to never be marked used on-chain
 const BATCH_INTERVAL_MS = 5000;
 const BATCH_SIZE = 50;
+const REDIS_BATCH_KEY = "markUsed:pending";
+let batchTimer: ReturnType<typeof setTimeout> | null = null;
+
+async function addToBatch(ticketId: string, contractAddress: string, tokenId: bigint): Promise<number> {
+  const entry = JSON.stringify({ ticketId, contractAddress, tokenId: tokenId.toString() });
+  await redis.hset(REDIS_BATCH_KEY, ticketId, entry);
+  return await redis.hlen(REDIS_BATCH_KEY);
+}
 
 async function flushBatch(): Promise<void> {
-  if (pendingTokenIds.size === 0) return;
+  // Atomically get and clear all pending entries
+  const entries = await redis.hgetall(REDIS_BATCH_KEY);
+  const keys = Object.keys(entries);
+  if (keys.length === 0) return;
+
+  // Delete fetched keys from Redis
+  await redis.hdel(REDIS_BATCH_KEY, ...keys);
 
   // Group by contract address
   const grouped = new Map<string, bigint[]>();
-  for (const [, { contractAddress, tokenId }] of pendingTokenIds) {
+  for (const raw of Object.values(entries)) {
+    const { contractAddress, tokenId } = JSON.parse(raw);
     const existing = grouped.get(contractAddress) || [];
-    existing.push(tokenId);
+    existing.push(BigInt(tokenId));
     grouped.set(contractAddress, existing);
   }
-  pendingTokenIds.clear();
 
   for (const [contractAddress, tokenIds] of grouped) {
     try {
@@ -46,7 +59,12 @@ async function flushBatch(): Promise<void> {
         data: { syncStatus: "SYNCED" },
       });
     } catch (err) {
-      logger.error({ err, contractAddress }, "Batch mark_used failed");
+      // Re-add failed entries back to Redis for retry
+      for (const tokenId of tokenIds) {
+        const entry = JSON.stringify({ contractAddress, tokenId: tokenId.toString() });
+        await redis.hset(REDIS_BATCH_KEY, `${contractAddress}:${tokenId}`, entry);
+      }
+      logger.error({ err, contractAddress }, "Batch mark_used failed, re-queued");
     }
   }
 }
@@ -62,13 +80,14 @@ const markUsedWorker = new Worker<MarkUsedJobData>(
     });
     if (!ticket) return;
 
-    pendingTokenIds.set(ticketId, {
-      contractAddress: ticket.event.contractAddress,
-      tokenId: ticket.tokenId,
-    });
+    const batchSize = await addToBatch(
+      ticketId,
+      ticket.event.contractAddress,
+      ticket.tokenId
+    );
 
     // Flush when batch is full
-    if (pendingTokenIds.size >= BATCH_SIZE) {
+    if (batchSize >= BATCH_SIZE) {
       if (batchTimer) {
         clearTimeout(batchTimer);
         batchTimer = null;
@@ -91,5 +110,8 @@ const markUsedWorker = new Worker<MarkUsedJobData>(
 markUsedWorker.on("failed", (job, err) => {
   logger.error({ jobId: job?.id, err: err.message }, "markUsed job failed");
 });
+
+// Flush any orphaned entries from previous crash on startup
+flushBatch().catch((err) => logger.error({ err }, "Startup flush failed"));
 
 export { markUsedWorker };

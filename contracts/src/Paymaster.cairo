@@ -180,6 +180,13 @@ pub mod Paymaster {
         fn top_up_organizer(ref self: ContractState, amount: u256) {
             let caller = get_caller_address();
             assert(self.organizer_active.read(caller), 'NOT_ACTIVE_ORGANIZER');
+            assert(amount > 0, 'ZERO_AMOUNT');
+            // SECURITY FIX (CRIT-05): Actually transfer tokens from organizer to paymaster
+            let strk = IERC20Dispatcher { contract_address: self.strk_token.read() };
+            assert(
+                strk.transfer_from(caller, starknet::get_contract_address(), amount),
+                'TRANSFER_FAILED',
+            );
             let current_budget = self.organizer_budget.read(caller);
             self.organizer_budget.write(caller, current_budget + amount);
             self.emit(Event::OrganizerTopUp(OrganizerTopUp { organizer: caller, amount }));
@@ -202,6 +209,10 @@ pub mod Paymaster {
         }
 
         fn validate_and_pay(ref self: ContractState, user: ContractAddress, gas_estimate: u256) {
+            // SECURITY FIX (HIGH-17): Only the sponsored user or owner can call
+            let caller = get_caller_address();
+            assert(caller == user || caller == self.owner.read(), 'NOT_AUTHORIZED');
+
             // 1. Lookup organizer
             let organizer = self.account_organizer.read(user);
             assert(!organizer.is_zero(), 'NOT_SPONSORED');

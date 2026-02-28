@@ -56,6 +56,9 @@ model Ticket {
   bridgedTicket       BridgedTicket?
 
   @@unique([eventId, tokenId])
+  @@index([ownerAddress])
+  @@index([eventId, status])
+  @@index([status])
 }
 
 enum TicketStatus {
@@ -75,6 +78,8 @@ model Listing {
   isActive         Boolean  @default(true)
   onChainListingId BigInt?
   createdAt        DateTime @default(now())
+
+  @@index([isActive, createdAt])
 }
 
 model ScanLog {
@@ -86,6 +91,8 @@ model ScanLog {
   gateId              String?
   isOfflineValidation Boolean    @default(false)
   syncStatus          SyncStatus @default(PENDING)
+
+  @@index([ticketId, syncStatus])
 }
 
 enum SyncStatus {
@@ -111,6 +118,7 @@ model PendingMint {
 enum BridgedTicketStatus {
   PENDING
   MINTED
+  CLAIMING
   CLAIMED
   FAILED
 }

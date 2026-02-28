@@ -6,7 +6,7 @@ import { createListingRateLimit } from "../middleware/rateLimit";
 
 const CreateListingSchema = z.object({
   ticketId: z.string().uuid(),
-  price: z.number().positive(),
+  price: z.number().positive().max(1_000_000_000),
 });
 
 const UUIDParam = z.object({ id: z.string().uuid() });
@@ -65,6 +65,11 @@ export async function marketplaceRoutes(app: FastifyInstance): Promise<void> {
       }
       if (ticket.event.maxTransfers > 0 && ticket.transferCount >= ticket.event.maxTransfers) {
         return reply.code(400).send({ error: "Maximum transfer limit reached" });
+      }
+      // SECURITY FIX (MED-06): Enforce resale price cap from event config
+      const maxResalePrice = Number(ticket.event.primaryPrice) * ticket.event.resaleCapBps / 10000;
+      if (price > maxResalePrice) {
+        return reply.code(400).send({ error: `Price exceeds resale cap (max: ${maxResalePrice})` });
       }
 
       let listing;
