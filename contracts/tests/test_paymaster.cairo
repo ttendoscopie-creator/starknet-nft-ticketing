@@ -461,3 +461,127 @@ fn test_paymaster_operations_resume_after_unpause() {
     let (_, spent) = dispatcher.get_organizer_budget(organizer1());
     assert_eq!(spent, 50000);
 }
+
+// ═══════════════════════════════════════════════════════
+// CROSS-ORGANIZER ISOLATION + EDGE CASES
+// ═══════════════════════════════════════════════════════
+
+fn organizer2() -> ContractAddress {
+    contract_address_const::<'organizer2'>()
+}
+fn user2() -> ContractAddress {
+    contract_address_const::<'user2'>()
+}
+
+// TEST 21: Cross-organizer isolation — spending from org1 doesn't affect org2
+#[test]
+fn test_cross_organizer_budget_isolation() {
+    let (dispatcher, _) = deploy_paymaster();
+    let addr = dispatcher.contract_address;
+
+    // Setup two organizers with separate budgets
+    start_cheat_caller_address(addr, owner());
+    dispatcher.setup_organizer(organizer1(), 500000, 500000);
+    dispatcher.setup_organizer(organizer2(), 300000, 300000);
+    dispatcher.sponsor_account(user(), organizer1());
+    dispatcher.sponsor_account(user2(), organizer2());
+    stop_cheat_caller_address(addr);
+
+    // User1 spends from org1
+    start_cheat_caller_address(addr, user());
+    start_cheat_block_timestamp(addr, 86400);
+    dispatcher.validate_and_pay(user(), 100000_u256);
+    stop_cheat_block_timestamp(addr);
+    stop_cheat_caller_address(addr);
+
+    // Verify org1 spent 100k, org2 spent 0
+    let (_, spent1) = dispatcher.get_organizer_budget(organizer1());
+    let (_, spent2) = dispatcher.get_organizer_budget(organizer2());
+    assert_eq!(spent1, 100000);
+    assert_eq!(spent2, 0);
+
+    // User2 spends from org2
+    start_cheat_caller_address(addr, user2());
+    start_cheat_block_timestamp(addr, 86400);
+    dispatcher.validate_and_pay(user2(), 50000_u256);
+    stop_cheat_block_timestamp(addr);
+    stop_cheat_caller_address(addr);
+
+    let (_, spent2_after) = dispatcher.get_organizer_budget(organizer2());
+    assert_eq!(spent2_after, 50000);
+}
+
+// TEST 22: Budget exhaustion mid-flow — exact boundary
+#[test]
+fn test_budget_exact_boundary() {
+    let (dispatcher, _) = deploy_paymaster();
+    let addr = dispatcher.contract_address;
+
+    // Budget = 100000 exactly
+    start_cheat_caller_address(addr, owner());
+    dispatcher.setup_organizer(organizer1(), 100000, 10000000);
+    dispatcher.sponsor_account(user(), organizer1());
+    stop_cheat_caller_address(addr);
+
+    // Spend exactly 100000 — should succeed
+    start_cheat_caller_address(addr, user());
+    start_cheat_block_timestamp(addr, 86400);
+    dispatcher.validate_and_pay(user(), 100000_u256);
+    stop_cheat_block_timestamp(addr);
+    stop_cheat_caller_address(addr);
+
+    let (budget, spent) = dispatcher.get_organizer_budget(organizer1());
+    assert_eq!(budget, 100000);
+    assert_eq!(spent, 100000);
+}
+
+// TEST 23: Daily count resets on new day
+#[test]
+fn test_daily_tx_count_resets_on_new_day() {
+    let (dispatcher, _) = deploy_paymaster();
+    let addr = dispatcher.contract_address;
+
+    start_cheat_caller_address(addr, owner());
+    dispatcher.setup_organizer(organizer1(), 10000000, 10000000);
+    dispatcher.sponsor_account(user(), organizer1());
+    stop_cheat_caller_address(addr);
+
+    // Exhaust daily tx count (10 txs on day 1)
+    let base_time: u64 = 86400;
+    start_cheat_caller_address(addr, user());
+    let mut i: u64 = 0;
+    loop {
+        if i >= MAX_TXS_PER_DAY {
+            break;
+        }
+        start_cheat_block_timestamp(addr, base_time + (i * MIN_INTERVAL));
+        dispatcher.validate_and_pay(user(), 1000_u256);
+        stop_cheat_block_timestamp(addr);
+        i += 1;
+    };
+
+    // Advance to day 2 — count should reset, tx should succeed
+    start_cheat_block_timestamp(addr, 86400 * 2);
+    dispatcher.validate_and_pay(user(), 1000_u256);
+    stop_cheat_block_timestamp(addr);
+    stop_cheat_caller_address(addr);
+}
+
+// TEST 24: top_up_organizer while paused -> CONTRACT_PAUSED
+#[test]
+#[feature("safe_dispatcher")]
+fn test_top_up_while_paused_fails() {
+    let (dispatcher, safe) = deploy_paymaster();
+    let addr = dispatcher.contract_address;
+
+    start_cheat_caller_address(addr, owner());
+    dispatcher.setup_organizer(organizer1(), 500000, 200000);
+    dispatcher.pause();
+    stop_cheat_caller_address(addr);
+
+    cheat_caller_address(addr, organizer1(), CheatSpan::TargetCalls(1));
+    match safe.top_up_organizer(100000_u256) {
+        Result::Ok(_) => panic!("Should have failed with CONTRACT_PAUSED"),
+        Result::Err(err) => assert(*err.at(0) == 'CONTRACT_PAUSED', 'Wrong error code'),
+    }
+}

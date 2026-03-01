@@ -33,6 +33,7 @@
     "@types/jsonwebtoken": "^9",
     "@types/node": "^20",
     "@types/qrcode": "^1",
+    "@vitest/coverage-v8": "^1.6.1",
     "pino-pretty": "^11",
     "prisma": "^5",
     "tsx": "^4",

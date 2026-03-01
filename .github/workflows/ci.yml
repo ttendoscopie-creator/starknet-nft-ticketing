@@ -18,6 +18,13 @@ jobs:
         with:
           scarb-version: "2.9.2"
 
+      - name: Cache Scarb target
+        uses: actions/cache@v4
+        with:
+          path: contracts/target
+          key: scarb-${{ runner.os }}-${{ hashFiles('contracts/Scarb.lock', 'contracts/Scarb.toml') }}
+          restore-keys: scarb-${{ runner.os }}-
+
       - name: Install Starknet Foundry
         uses: foundry-rs/setup-snfoundry@v3
         with:
@@ -39,6 +46,15 @@ jobs:
         run: snforge test --detailed-resources
         working-directory: contracts
 
+      - name: Upload contract artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: contract-artifacts
+          path: |
+            contracts/target/dev/*.contract_class.json
+            contracts/target/dev/*.compiled_contract_class.json
+          retention-days: 30
+
   backend:
     runs-on: ubuntu-latest
     steps:
@@ -57,7 +73,8 @@ jobs:
         working-directory: backend
       - run: npx tsc --noEmit
         working-directory: backend
-      - run: npm test -- --run
+      - name: Run tests with coverage
+        run: npm test -- --run --coverage
         working-directory: backend
 
   frontend:
@@ -80,8 +97,8 @@ jobs:
         run: npm audit --audit-level=critical --omit=dev
         working-directory: frontend
 
-      - name: Run tests
-        run: npm test -- --run
+      - name: Run tests with coverage
+        run: npm test -- --run --coverage
         working-directory: frontend
 
       - name: Type check

@@ -518,3 +518,146 @@ fn test_account_constructor_rejects_zero_pubkey() {
         Result::Err(_) => (),
     }
 }
+
+// ═══════════════════════════════════════════════════════
+// RECOVERY LIFECYCLE EDGE CASES
+// ═══════════════════════════════════════════════════════
+
+// TEST 23: Full recovery lifecycle: initiate -> cancel -> initiate again -> execute
+#[test]
+fn test_recovery_cancel_then_reinitiate() {
+    let (_, _, session, _, recovery, _, _, _) = deploy_account();
+    let addr = recovery.contract_address;
+
+    // Guardian initiates recovery
+    start_cheat_caller_address(addr, guardian_address());
+    start_cheat_block_timestamp(addr, 100000);
+    recovery.initiate_recovery(0xBEEF);
+    stop_cheat_block_timestamp(addr);
+    stop_cheat_caller_address(addr);
+
+    // Owner cancels
+    start_cheat_caller_address(addr, zero_address());
+    recovery.cancel_recovery();
+    stop_cheat_caller_address(addr);
+
+    // Verify reset
+    let (pending, _) = recovery.get_recovery_status();
+    assert_eq!(pending, 0);
+
+    // Guardian initiates again with different key
+    start_cheat_caller_address(addr, guardian_address());
+    start_cheat_block_timestamp(addr, 200000);
+    recovery.initiate_recovery(0xCAFE);
+    stop_cheat_block_timestamp(addr);
+
+    // Execute after timelock
+    start_cheat_block_timestamp(addr, 200000 + RECOVERY_DELAY);
+    recovery.execute_recovery();
+    stop_cheat_block_timestamp(addr);
+    stop_cheat_caller_address(addr);
+
+    assert_eq!(session.get_owner_pubkey(), 0xCAFE);
+}
+
+// TEST 24: Execute recovery with no pending -> NO_PENDING_RECOVERY
+#[test]
+#[feature("safe_dispatcher")]
+fn test_execute_recovery_no_pending_fails() {
+    let (_, _, _, _, _, safe_recovery, _, _) = deploy_account();
+    let addr = safe_recovery.contract_address;
+
+    start_cheat_caller_address(addr, guardian_address());
+    match safe_recovery.execute_recovery() {
+        Result::Ok(_) => panic!("Should have failed with NO_PENDING_RECOVERY"),
+        Result::Err(err) => assert(*err.at(0) == 'NO_PENDING_RECOVERY', 'Wrong error code'),
+    }
+    stop_cheat_caller_address(addr);
+}
+
+// TEST 25: Initiate recovery with zero pubkey -> INVALID_PUBKEY
+#[test]
+#[feature("safe_dispatcher")]
+fn test_initiate_recovery_zero_pubkey_fails() {
+    let (_, _, _, _, _, safe_recovery, _, _) = deploy_account();
+    let addr = safe_recovery.contract_address;
+
+    start_cheat_caller_address(addr, guardian_address());
+    match safe_recovery.initiate_recovery(0) {
+        Result::Ok(_) => panic!("Should have failed with INVALID_PUBKEY"),
+        Result::Err(err) => assert(*err.at(0) == 'INVALID_PUBKEY', 'Wrong error code'),
+    }
+    stop_cheat_caller_address(addr);
+}
+
+// TEST 26: rotate_owner_key revokes session keys
+#[test]
+fn test_rotate_owner_key_revokes_session() {
+    let (src6, _, session, _, recovery, _, secret_key, _) = deploy_account();
+    let addr = src6.contract_address;
+
+    // Set session key
+    let session_kp = StarkCurveKeyPairImpl::generate();
+    start_cheat_caller_address(addr, zero_address());
+    start_cheat_block_timestamp(addr, 1000);
+    session.set_session_key(session_kp.public_key, 2000, 1);
+    stop_cheat_block_timestamp(addr);
+
+    // Rotate owner key
+    let new_pubkey: felt252 = 0xDEAD;
+    recovery.rotate_owner_key(new_pubkey);
+    stop_cheat_caller_address(addr);
+
+    // Verify new owner key
+    assert_eq!(session.get_owner_pubkey(), new_pubkey);
+
+    // Session key signature should fail (session was revoked)
+    let tx_hash: felt252 = 0xabcdef;
+    let (r, s) = match session_kp.sign(tx_hash) {
+        Result::Ok((r, s)) => (r, s),
+        Result::Err(_) => panic!("Sign failed"),
+    };
+    let result = src6.is_valid_signature(tx_hash, array![r, s]);
+    assert_eq!(result, 0);
+}
+
+// TEST 27: rotate_owner_key with zero pubkey -> INVALID_PUBKEY
+#[test]
+#[feature("safe_dispatcher")]
+fn test_rotate_owner_key_zero_pubkey_fails() {
+    let (_, _, _, _, _, safe_recovery, _, _) = deploy_account();
+    let addr = safe_recovery.contract_address;
+
+    start_cheat_caller_address(addr, zero_address());
+    match safe_recovery.rotate_owner_key(0) {
+        Result::Ok(_) => panic!("Should have failed with INVALID_PUBKEY"),
+        Result::Err(err) => assert(*err.at(0) == 'INVALID_PUBKEY', 'Wrong error code'),
+    }
+    stop_cheat_caller_address(addr);
+}
+
+// TEST 28: Execute recovery by non-guardian -> NOT_GUARDIAN
+#[test]
+#[feature("safe_dispatcher")]
+fn test_execute_recovery_not_guardian_fails() {
+    let (_, _, _, _, recovery, safe_recovery, _, _) = deploy_account();
+    let addr = recovery.contract_address;
+
+    // Guardian initiates
+    start_cheat_caller_address(addr, guardian_address());
+    start_cheat_block_timestamp(addr, 100000);
+    recovery.initiate_recovery(0xBEEF);
+    stop_cheat_block_timestamp(addr);
+    stop_cheat_caller_address(addr);
+
+    // Attacker tries to execute
+    let attacker = contract_address_const::<'attacker'>();
+    start_cheat_caller_address(addr, attacker);
+    start_cheat_block_timestamp(addr, 100000 + RECOVERY_DELAY);
+    match safe_recovery.execute_recovery() {
+        Result::Ok(_) => panic!("Should have failed with NOT_GUARDIAN"),
+        Result::Err(err) => assert(*err.at(0) == 'NOT_GUARDIAN', 'Wrong error code'),
+    }
+    stop_cheat_block_timestamp(addr);
+    stop_cheat_caller_address(addr);
+}

@@ -39,7 +39,7 @@ A decentralized event ticketing platform on Starknet. Every ticket is a unique N
 | **Paymaster** | Zero frais blockchain pour l'utilisateur (sponsorise par l'organisateur) |
 | **Digital Twin Bridge** | Pont automatique Eventbrite/Weezevent -> NFT Starknet |
 | **Securite** | Soulbound, recovery 24h, sessions temporaires, circuit breaker, audit red-team (49 correctifs) |
-| **Tests** | 351 tests automatises (125 Cairo + 217 backend + 9 frontend), dont 30 simulations d'attaque |
+| **Tests** | 442 tests automatises (139 Cairo + 235 backend + 68 frontend), dont 30 simulations d'attaque |
 | **CI/CD** | GitHub Actions, 3 pipelines paralleles |
 
 ---

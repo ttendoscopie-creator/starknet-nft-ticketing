@@ -630,3 +630,101 @@ fn test_marketplace_operations_resume_after_unpause() {
 
     assert_eq!(mkt.is_listing_active(listing_id), true);
 }
+
+// ═══════════════════════════════════════════════════════
+// CONCURRENCE + EDGE CASE TESTS
+// ═══════════════════════════════════════════════════════
+
+// TEST 27: Double listing same ticket — second listing creates separate ID
+// (on-chain doesn't prevent multiple listings for same token, the buy_listing checks ownership)
+#[test]
+fn test_double_listing_same_ticket() {
+    let (mkt, _, ticket, _) = deploy_marketplace_with_ticket();
+    mint_ticket_to_seller(ticket, 1_u256);
+
+    start_cheat_caller_address(mkt.contract_address, seller());
+    let listing1 = mkt.create_listing(ticket.contract_address, 1_u256, 500000_u256);
+    let listing2 = mkt.create_listing(ticket.contract_address, 1_u256, 600000_u256);
+    stop_cheat_caller_address(mkt.contract_address);
+
+    // Both listings created with different IDs
+    assert!(listing1 != listing2);
+    assert_eq!(mkt.get_listing_count(), 2_u256);
+    assert_eq!(mkt.is_listing_active(listing1), true);
+    assert_eq!(mkt.is_listing_active(listing2), true);
+}
+
+// TEST 28: Buy first listing, second listing for same token fails on buy (ownership changed)
+#[test]
+#[feature("safe_dispatcher")]
+fn test_buy_after_ownership_transfer_fails() {
+    let (mkt, safe_mkt, ticket, _) = deploy_marketplace_with_ticket();
+    mint_ticket_to_seller(ticket, 1_u256);
+
+    // Seller creates two listings for the same ticket
+    start_cheat_caller_address(mkt.contract_address, seller());
+    let listing1 = mkt.create_listing(ticket.contract_address, 1_u256, 500000_u256);
+    let listing2 = mkt.create_listing(ticket.contract_address, 1_u256, 600000_u256);
+    stop_cheat_caller_address(mkt.contract_address);
+
+    // Buyer buys listing1 — ticket transfers to buyer
+    start_cheat_caller_address(mkt.contract_address, buyer_addr());
+    mkt.buy_listing(listing1);
+    stop_cheat_caller_address(mkt.contract_address);
+
+    assert_eq!(ticket.owner_of(1_u256), buyer_addr());
+
+    // Another buyer tries to buy listing2 — should fail (seller no longer owns the ticket)
+    let buyer2 = contract_address_const::<'buyer2'>();
+    cheat_caller_address(safe_mkt.contract_address, buyer2, CheatSpan::TargetCalls(1));
+    match safe_mkt.buy_listing(listing2) {
+        Result::Ok(_) => panic!("Should have failed - seller no longer owns ticket"),
+        Result::Err(_) => () // Fails because transfer_ticket checks ownership
+    }
+}
+
+// TEST 29: Cancel listing while paused -> CONTRACT_PAUSED
+#[test]
+#[feature("safe_dispatcher")]
+fn test_cancel_listing_while_paused_fails() {
+    let (mkt, safe_mkt, ticket, _) = deploy_marketplace_with_ticket();
+    mint_ticket_to_seller(ticket, 1_u256);
+
+    start_cheat_caller_address(mkt.contract_address, seller());
+    let listing_id = mkt.create_listing(ticket.contract_address, 1_u256, 500000_u256);
+    stop_cheat_caller_address(mkt.contract_address);
+
+    start_cheat_caller_address(mkt.contract_address, owner());
+    mkt.pause();
+    stop_cheat_caller_address(mkt.contract_address);
+
+    cheat_caller_address(safe_mkt.contract_address, seller(), CheatSpan::TargetCalls(1));
+    match safe_mkt.cancel_listing(listing_id) {
+        Result::Ok(_) => panic!("Should have failed with CONTRACT_PAUSED"),
+        Result::Err(err) => assert(*err.at(0) == 'CONTRACT_PAUSED', 'Wrong error code'),
+    }
+}
+
+// TEST 30: Listing and buying multiple tickets in sequence
+#[test]
+fn test_multiple_tickets_list_and_buy() {
+    let (mkt, _, ticket, _) = deploy_marketplace_with_ticket();
+    mint_ticket_to_seller(ticket, 1_u256);
+    mint_ticket_to_seller(ticket, 2_u256);
+
+    start_cheat_caller_address(mkt.contract_address, seller());
+    let listing1 = mkt.create_listing(ticket.contract_address, 1_u256, 300000_u256);
+    let listing2 = mkt.create_listing(ticket.contract_address, 2_u256, 400000_u256);
+    stop_cheat_caller_address(mkt.contract_address);
+
+    // Buy both
+    start_cheat_caller_address(mkt.contract_address, buyer_addr());
+    mkt.buy_listing(listing1);
+    mkt.buy_listing(listing2);
+    stop_cheat_caller_address(mkt.contract_address);
+
+    assert_eq!(ticket.owner_of(1_u256), buyer_addr());
+    assert_eq!(ticket.owner_of(2_u256), buyer_addr());
+    assert_eq!(mkt.is_listing_active(listing1), false);
+    assert_eq!(mkt.is_listing_active(listing2), false);
+}

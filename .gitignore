@@ -15,6 +15,9 @@ contracts/.snfoundry_cache/
 .env
 .env.local
 
+# Coverage
+coverage/
+
 # OS
 .DS_Store
 

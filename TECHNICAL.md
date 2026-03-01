@@ -238,17 +238,17 @@ npx tsx demo.ts
 ### Run Tests
 
 ```bash
-# Cairo contracts (125 tests)
+# Cairo contracts (139 tests)
 cd contracts
 snforge test
 
-# Backend (217 tests)
+# Backend (235 tests, with coverage)
 cd backend
-npm test
+npm test -- --coverage
 
-# Frontend (9 tests + type check + build)
+# Frontend (68 tests, with coverage)
 cd frontend
-npm test
+npm test -- --coverage
 npx tsc --noEmit
 npx next build
 ```
@@ -259,9 +259,9 @@ GitHub Actions runs 3 parallel jobs on every push/PR to `main`:
 
 | Job | Steps | Duration |
 |-----|-------|----------|
-| **Contracts** | `scarb fmt --check` -> `scarb build` -> `snforge test` (125 tests) -> gas report | ~2m |
-| **Backend** | `npm ci` -> `prisma generate` -> `tsc --noEmit` -> `vitest` (217 tests) | ~25s |
-| **Frontend** | `npm ci` -> `vitest` (9 tests) -> `tsc --noEmit` -> `next build` | ~50s |
+| **Contracts** | `scarb fmt --check` -> `scarb build` -> `snforge test` (139 tests) -> gas report -> artifact upload | ~2m |
+| **Backend** | `npm ci` -> `prisma generate` -> `tsc --noEmit` -> `vitest --coverage` (235 tests, min 60%) | ~25s |
+| **Frontend** | `npm ci` -> `vitest --coverage` (68 tests, min 50%) -> `tsc --noEmit` -> `next build` | ~50s |
 
 ## Main Flow
 
@@ -321,7 +321,7 @@ starknet-nft-ticketing/
 │   │   ├── queue/          # BullMQ job definitions
 │   │   ├── indexer/        # Starknet event indexer
 │   │   └── db/             # Prisma singleton + schema + migrations + Redis
-│   └── vitest.config.ts    # 217 Vitest tests
+│   └── vitest.config.ts    # 235 Vitest tests
 ├── frontend/               # Next.js app
 │   ├── app/                # Pages (App Router)
 │   └── components/         # React components
