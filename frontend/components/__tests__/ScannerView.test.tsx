@@ -1,9 +1,9 @@
 import { render, screen, waitFor, act } from "@testing-library/react";
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from "vitest";
 
 // We need to control the Html5Qrcode mock per-test
-let mockStart: ReturnType<typeof vi.fn>;
-let mockStop: ReturnType<typeof vi.fn>;
+let mockStart: Mock<(...args: unknown[]) => Promise<void>>;
+let mockStop: Mock<(...args: unknown[]) => Promise<void>>;
 
 vi.mock("html5-qrcode", () => ({
   Html5Qrcode: vi.fn().mockImplementation(function (this: Record<string, unknown>) {
