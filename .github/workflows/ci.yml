@@ -80,6 +80,10 @@ jobs:
         run: npm audit --audit-level=critical --omit=dev
         working-directory: frontend
 
+      - name: Run tests
+        run: npm test -- --run
+        working-directory: frontend
+
       - name: Type check
         run: npx tsc --noEmit
         working-directory: frontend
