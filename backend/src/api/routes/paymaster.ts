@@ -59,17 +59,22 @@ export async function paymasterRoutes(app: FastifyInstance): Promise<void> {
       const apiKey = ""; // Future: lookup from organizer.avnuApiKey
 
       try {
+        const headers: Record<string, string> = {
+          "Content-Type": "application/json",
+        };
+        if (apiKey) {
+          headers["x-paymaster-api-key"] = apiKey;
+        }
+
         const response = await fetch(AVNU_PAYMASTER_URL, {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            ...(apiKey && { "x-paymaster-api-key": apiKey }),
-          },
+          headers,
           body: JSON.stringify(request.body),
         });
 
         const data = await response.json();
-        return reply.code(response.status).send(data);
+        const status = response.status as 200 | 429 | 502;
+        return reply.code(status).send(data);
       } catch (err) {
         logger.error({ err, walletAddress }, "AVNU paymaster proxy failed");
         return reply

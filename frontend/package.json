@@ -15,7 +15,7 @@
     "react": "^18",
     "react-dom": "^18",
     "starknet": "^9",
-    "starkzap": "latest"
+    "starkzap": "^1.0.0"
   },
   "devDependencies": {
     "@testing-library/jest-dom": "^6.9.1",
