@@ -51,7 +51,7 @@ A decentralized event ticketing platform on Starknet. Every ticket is a unique N
 | Couche | Technologie |
 |--------|-------------|
 | **Smart contracts** | Cairo 2.9, Scarb 2.9.2, Starknet Foundry 0.35.1 |
-| **Backend** | Node.js 20, Fastify 5, TypeScript 5, Prisma 5, BullMQ 5 |
+| **Backend** | Node.js 22, Fastify 5, TypeScript 5, Prisma 5, BullMQ 5 |
 | **Frontend** | Next.js 14, React 18, Tailwind CSS 3, StarkZap SDK |
 | **Auth** | Cartridge Controller (passkeys, biometrie, social login) |
 | **Gas** | AVNU Paymaster (transactions gasless) |

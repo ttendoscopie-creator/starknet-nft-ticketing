@@ -192,7 +192,7 @@ Organizer ──< Event ──< Ticket ──< ScanLog
 
 ### Prerequisites
 
-- Node.js 20+
+- Node.js 22+
 - Python 3.10+ (for contract deployment)
 - [Scarb 2.9.2](https://docs.swmansion.com/scarb/) (Cairo build tool)
 - [Starknet Foundry 0.35.1](https://foundry-rs.github.io/starknet-foundry/) (test framework)
@@ -304,7 +304,7 @@ External ticketing provider sells ticket
 | Layer | Technology |
 |-------|-----------|
 | Smart Contracts | Cairo 2.9, Scarb, Starknet Foundry |
-| Backend | Node.js 20, Fastify 5, TypeScript 5, Zod |
+| Backend | Node.js 22, Fastify 5, TypeScript 5, Zod |
 | Database | PostgreSQL 16 (Prisma 5), Redis 7 (ioredis) |
 | Queue | BullMQ 5 |
 | Frontend | Next.js 14, React 18, Tailwind CSS 3 |
