@@ -8,7 +8,8 @@ A decentralized event ticketing platform on Starknet. Every ticket is a unique N
 ┌─────────────┐     ┌─────────────┐     ┌──────────────────┐
 │  Frontend    │────▶│  Backend    │────▶│  Starknet        │
 │  Next.js 14  │     │  Fastify    │     │  Cairo Contracts │
-│  Web3Auth    │     │  BullMQ     │     │  Sepolia / Main  │
+│  StarkZap    │     │  BullMQ     │     │  Sepolia / Main  │
+│  Cartridge   │     │  AVNU PM    │     │                  │
 └─────────────┘     └──────┬──────┘     └──────────────────┘
                            │
                     ┌──────┴──────┐
@@ -36,11 +37,44 @@ A decentralized event ticketing platform on Starknet. Every ticket is a unique N
 | **Paiement** | Carte bancaire (Stripe), virement (Weero), crypto (STRK/USDC/USDT) |
 | **Scan QR** | Dynamique (25s), validation < 50 ms, anti-double utilisation |
 | **Marketplace** | Revente P2P, plafond de prix, royalties automatiques, 2% commission |
-| **Paymaster** | Zero frais blockchain pour l'utilisateur (sponsorise par l'organisateur) |
+| **Paymaster** | Zero frais blockchain via AVNU Paymaster (sponsorise par l'organisateur) |
+| **Wallet** | Connexion Cartridge Controller via StarkZap (passkeys, biometrie, social login) |
 | **Digital Twin Bridge** | Pont automatique Eventbrite/Weezevent -> NFT Starknet |
-| **Securite** | Soulbound, recovery 24h, sessions temporaires, circuit breaker, audit red-team (49 correctifs) |
-| **Tests** | 442 tests automatises (139 Cairo + 235 backend + 68 frontend), dont 30 simulations d'attaque |
+| **Securite** | Soulbound, recovery, sessions Cartridge, circuit breaker, audit red-team (49 correctifs) |
+| **Tests** | 397 tests automatises (87 Cairo + 242 backend + 68 frontend), dont 30 simulations d'attaque |
 | **CI/CD** | GitHub Actions, 3 pipelines paralleles |
+
+---
+
+## Stack technique
+
+| Couche | Technologie |
+|--------|-------------|
+| **Smart contracts** | Cairo 2.9, Scarb 2.9.2, Starknet Foundry 0.35.1 |
+| **Backend** | Node.js 20, Fastify 5, TypeScript 5, Prisma 5, BullMQ 5 |
+| **Frontend** | Next.js 14, React 18, Tailwind CSS 3, StarkZap SDK |
+| **Auth** | Cartridge Controller (passkeys, biometrie, social login) |
+| **Gas** | AVNU Paymaster (transactions gasless) |
+| **Blockchain** | Starknet (Sepolia / Mainnet), starknet.js v9 |
+| **Infra** | PostgreSQL 16, Redis 7, Docker Compose, GitHub Actions |
+
+---
+
+## Quick start
+
+```bash
+# Infrastructure
+docker compose up -d
+
+# Backend
+cd backend && npm ci && npx prisma migrate dev && npm run dev
+
+# Frontend
+cd frontend && npm ci && npm run dev
+
+# Deploy contracts (optional)
+cd deploy && npx tsx deploy.ts
+```
 
 ---
 

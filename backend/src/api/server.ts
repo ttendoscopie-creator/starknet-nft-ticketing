@@ -15,6 +15,7 @@ import { eventRoutes } from "./routes/events";
 import { ticketRoutes } from "./routes/tickets";
 import { marketplaceRoutes } from "./routes/marketplace";
 import { paymentRoutes } from "./routes/payments";
+import { paymasterRoutes } from "./routes/paymaster";
 import { bridgeRoutes } from "./routes/bridge";
 
 const PORT = Number(process.env.PORT) || 3001;
@@ -77,6 +78,7 @@ async function buildApp() {
         { name: "Payments", description: "Crypto payment verification" },
         { name: "Bridge", description: "External ticketing bridge (Digital Twin)" },
         { name: "Webhooks", description: "Stripe webhook handler" },
+        { name: "Paymaster", description: "AVNU gasless transaction proxy" },
       ],
       components: {
         securitySchemes: {
@@ -151,6 +153,7 @@ async function buildApp() {
   await app.register(ticketRoutes);
   await app.register(marketplaceRoutes);
   await app.register(paymentRoutes);
+  await app.register(paymasterRoutes);
 
   // Global error handler — consistent error responses, no stack trace leaks
   app.setErrorHandler((error: Error & { statusCode?: number }, request, reply) => {

@@ -27,7 +27,6 @@ const DEPLOYER_ADDRESS = process.env.DEPLOYER_ADDRESS || "";
 interface Deployments {
   factory_address: string;
   marketplace_address: string;
-  paymaster_address: string;
   ticket_class_hash: string;
 }
 

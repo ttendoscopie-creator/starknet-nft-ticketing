@@ -9,7 +9,7 @@ const DEPLOYER_ADDRESS = process.env.DEPLOYER_ADDRESS!;
 const FACTORY_ADDRESS = process.env.FACTORY_ADDRESS || "";
 
 const provider = new RpcProvider({ nodeUrl: STARKNET_RPC_URL });
-const account = new Account(provider, DEPLOYER_ADDRESS, DEPLOYER_PRIVATE_KEY);
+const account = new Account({ provider, address: DEPLOYER_ADDRESS, signer: DEPLOYER_PRIVATE_KEY });
 
 const MAX_RETRIES = 3;
 const BACKOFF_BASE_MS = 1000;

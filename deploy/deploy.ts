@@ -135,28 +135,7 @@ async function main() {
   );
   deployments.marketplace_address = marketplaceAddress;
 
-  // 3. Declare + Deploy Paymaster
-  const paymasterClassHash = await declareContract(
-    account,
-    "starknet_nft_ticketing_Paymaster",
-    "Paymaster"
-  );
-  // Paymaster constructor: owner, strk_token, max_gas_per_tx (u256), max_txs_per_day (u64), min_interval (u64)
-  const paymasterAddress = await deployContract(
-    account,
-    paymasterClassHash,
-    [
-      DEPLOYER_ADDRESS,        // owner
-      STRK_ADDRESS,            // strk_token
-      "500000", "0",           // max_gas_per_tx u256 (low, high)
-      "100",                   // max_txs_per_day u64
-      "60",                    // min_interval u64 (seconds)
-    ],
-    "Paymaster"
-  );
-  deployments.paymaster_address = paymasterAddress;
-
-  // 4. Declare + Deploy TicketFactory
+  // 3. Declare + Deploy TicketFactory
   const factoryClassHash = await declareContract(
     account,
     "starknet_nft_ticketing_TicketFactory",
@@ -182,7 +161,6 @@ async function main() {
   console.log("\n--- Add to .env ---");
   console.log(`FACTORY_ADDRESS=${factoryAddress}`);
   console.log(`MARKETPLACE_ADDRESS=${marketplaceAddress}`);
-  console.log(`PAYMASTER_ADDRESS=${paymasterAddress}`);
 
   console.log("\nDeployment complete!");
 }

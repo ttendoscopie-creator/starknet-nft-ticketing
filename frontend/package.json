@@ -10,17 +10,12 @@
     "test": "vitest"
   },
   "dependencies": {
-    "@web3auth/modal": "^8",
     "html5-qrcode": "^2.3",
     "next": "^14",
     "react": "^18",
     "react-dom": "^18",
-    "starknet": "^6"
-  },
-  "overrides": {
-    "@exodus/bytes": {
-      "@noble/hashes": "1.6.0"
-    }
+    "starknet": "^9",
+    "starkzap": "latest"
   },
   "devDependencies": {
     "@testing-library/jest-dom": "^6.9.1",

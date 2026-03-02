@@ -37,7 +37,7 @@ La plateforme couvre **l'integralite de la chaine de valeur** : creation d'evene
 ### 2.1 Le spectateur (fan)
 
 **Etape 1 -- Connexion simplifiee**
-Le spectateur se connecte avec son **compte Google, Apple, ou email**. Pas besoin de comprendre la blockchain ni de posseder un portefeuille crypto au prealable. La plateforme utilise **Web3Auth**, une technologie qui cree automatiquement un portefeuille blockchain invisible a partir de la connexion sociale. L'experience est identique a celle de n'importe quel site web moderne.
+Le spectateur se connecte avec ses **passkeys (empreinte digitale, Face ID), son compte Google, Apple, ou email**. Pas besoin de comprendre la blockchain ni de posseder un portefeuille crypto au prealable. La plateforme utilise **Cartridge Controller**, le portefeuille natif de Starknet developpe par l'ecosysteme, qui cree automatiquement un portefeuille blockchain securise par biometrie. L'experience est identique a celle de n'importe quel site web moderne, avec la securite en plus.
 
 **Etape 2 -- Achat du billet**
 Trois options de paiement :
@@ -94,15 +94,15 @@ Chaque billet n'est pas un simple jeton. C'est un **objet programmable** dont le
 | **Mode Soulbound** | Billet non-transferable, lie a son proprietaire | Anti-revente totale quand necessaire |
 | **Limite de transferts** | Nombre maximum de reventes configurable | Controle de la circulation |
 
-### 3.2 Transactions sans frais pour l'utilisateur (Paymaster)
+### 3.2 Transactions sans frais pour l'utilisateur (Paymaster AVNU)
 
-Un des freins majeurs a l'adoption de la blockchain est le **cout des transactions** (appeles "gas fees"). Notre plateforme integre un systeme de **Paymaster** qui permet a l'organisateur de **prendre en charge les frais de transaction** a la place du spectateur.
+Un des freins majeurs a l'adoption de la blockchain est le **cout des transactions** (appeles "gas fees"). Notre plateforme integre **AVNU Paymaster**, le service de sponsorisation de transactions natif de l'ecosysteme Starknet, qui permet a l'organisateur de **prendre en charge les frais de transaction** a la place du spectateur.
 
 Fonctionnement :
-- L'organisateur depose un **budget** sur le Paymaster.
+- L'organisateur configure une **cle API AVNU** pour sponsoriser les transactions de ses spectateurs.
 - Chaque transaction effectuee par un spectateur (achat, transfert, revente) est **sponsorisee** : le spectateur ne paie rien en frais blockchain.
-- Des **limites quotidiennes** empechent les abus (par exemple : maximum 10 transactions par jour par utilisateur).
-- Un systeme **anti-spam** empeche les utilisateurs malveillants d'epuiser le budget (delai minimum entre chaque transaction).
+- Des **limites quotidiennes** par utilisateur empechent les abus (par defaut : maximum 20 transactions sponsorisees par jour).
+- Le backend agit comme **proxy securise** vers AVNU, avec rate limiting Redis par portefeuille.
 
 Resultat : **l'utilisateur final ne voit jamais de frais blockchain**. L'experience est identique a celle d'une application classique.
 
@@ -151,21 +151,21 @@ Le spectateur se retrouve avec un **billet classique** (pour l'entree) ET un **N
 
 ### 3.6 Recuperation de compte (Account Recovery)
 
-Si un spectateur perd acces a son compte (telephone perdu, oubli de mot de passe), un systeme de recuperation securise est en place :
+Si un spectateur perd acces a son compte (telephone perdu, oubli de mot de passe), le systeme de recuperation **Cartridge Controller** est en place :
 
-- **Gardien** : un tiers de confiance (ami, service client) est designe a l'avance.
-- **Delai de securite de 24h** : une demande de recuperation ne prend effet qu'apres 24 heures. Si le proprietaire legitime revient entre-temps, il peut annuler la demande.
+- **Recuperation via l'infrastructure Cartridge** : processus de recuperation securise gere par le portefeuille natif Starknet.
+- **Passkeys et biometrie** : l'authentification par empreinte digitale ou Face ID rend la perte de "mot de passe" quasi impossible.
 - **Revocation automatique** : toutes les sessions actives et cles temporaires sont automatiquement invalidees lors d'une recuperation.
 
-Ce systeme empeche un attaquant de voler un compte meme s'il a acces au gardien : le proprietaire a 24 heures pour bloquer l'operation.
+Ce systeme, gere par l'infrastructure Cartridge (ecosysteme Starknet), offre une recuperation simple et securisee sans compromettre la securite du compte.
 
-### 3.7 Sessions temporaires (Session Keys)
+### 3.7 Sessions temporaires (Session Keys Cartridge)
 
-Pour eviter que l'utilisateur ait a approuver chaque action individuellement (ce qui est une friction majeure en blockchain), le systeme utilise des **cles de session** :
+Pour eviter que l'utilisateur ait a approuver chaque action individuellement (ce qui est une friction majeure en blockchain), le systeme utilise les **politiques de session Cartridge Controller** :
 
-- L'utilisateur approuve une session une seule fois.
-- Pendant **24 heures maximum**, les actions sont pre-approuvees (achats, transferts, scans).
-- Chaque cle de session a un **perimetre limite** : elle ne peut effectuer que certaines actions precises.
+- L'utilisateur approuve une session une seule fois lors de la connexion.
+- Les actions sont pre-approuvees pour les **methodes specifiques** du contrat (achat, mise en vente, annulation sur la marketplace).
+- Chaque politique de session a un **perimetre limite** : elle ne peut interagir qu'avec des contrats et methodes precises (ex: `list_ticket`, `buy_ticket`, `cancel_listing`).
 - Les cles expirent automatiquement et sont revoquees en cas de recuperation de compte.
 
 ---
@@ -241,7 +241,7 @@ Ce marche est encore jeune et fragmente. Aucun acteur n'a pris une position domi
 | Plafond de revente on-chain | Non | Non | Partiel | Non | **Oui (contrat intelligent)** |
 | Royalties automatiques | Non | Non | Partiel | Non | **Oui (programmables)** |
 | Mode Soulbound | Non | Non | Non | Non | **Oui (natif)** |
-| Recuperation de compte | Non | Non | Non | Non | **Gardien + timelock 24h** |
+| Recuperation de compte | Non | Non | Non | Non | **Oui (Cartridge Controller)** |
 | Mode hors-ligne | Non | Partiel | Non | Non | **Cache + sync auto** |
 | Preuve zero-knowledge | Non | Non | Non | Non | **Oui (ZK-STARKs)** |
 
@@ -305,11 +305,11 @@ Starknet confirme les transactions en moins de 2 secondes. Pour le scan au porti
 Starknet est un "rollup" : toutes les transactions sont regroupees en lots, et une **preuve mathematique** (ZK-STARK) est generee pour prouver que ces transactions sont valides. Cette preuve est ensuite **verifiee sur Ethereum**. Cela signifie que meme si Starknet disparaissait demain, tous les billets et leur historique seraient recuperables a partir d'Ethereum. C'est le niveau de securite le plus eleve disponible dans l'industrie blockchain.
 
 **4. Abstraction de compte : l'experience Web2**
-Sur Starknet, chaque utilisateur possede un **compte intelligent** (smart account). Cela permet :
-- Se connecter avec Google/Apple/email (pas besoin de cle privee)
-- Sessions temporaires (pas de popup de confirmation a chaque action)
-- Recuperation de compte par un gardien (pas de "seed phrase" a memoriser)
-- Paymaster (l'organisateur paie les frais a la place de l'utilisateur)
+Sur Starknet, chaque utilisateur possede un **compte intelligent** (smart account). Notre plateforme exploite cette capacite via **Cartridge Controller**, le portefeuille natif de l'ecosysteme Starknet :
+- Se connecter avec passkeys/biometrie, Google, Apple, ou email (pas besoin de cle privee)
+- Sessions temporaires avec politiques (pas de popup de confirmation a chaque action)
+- Recuperation de compte via l'infrastructure Cartridge (pas de "seed phrase" a memoriser)
+- Paymaster AVNU (l'organisateur paie les frais a la place de l'utilisateur)
 
 Aucune autre blockchain ne propose ces 4 fonctionnalites nativement. Sur Polygon ou Ethereum, il faut assembler des solutions tierces fragiles et couteuses.
 
@@ -376,27 +376,28 @@ Starknet est la version ouverte et decentralisee de cette meme technologie. En c
 
 ### 6.1 Tests automatises
 
-La plateforme est couverte par **235 tests automatises** qui verifient le bon fonctionnement de chaque composant :
+La plateforme est couverte par **397 tests automatises** qui verifient le bon fonctionnement de chaque composant :
 
 | Composant | Nombre de tests | Couverture |
 |-----------|----------------|------------|
-| Contrats intelligents (Cairo) | 71 tests | Mint, transfert, revente, plafonds, royalties, soulbound, sessions, recovery, paymaster |
-| Backend (TypeScript) | 164 tests | Routes, services, workers, integration, bridge, securite |
-| **Total** | **235 tests** | |
+| Contrats intelligents (Cairo) | 87 tests | Mint, transfert, revente, plafonds, royalties, soulbound, batch mint, pause, marketplace, factory, integration |
+| Backend (TypeScript) | 242 tests | Routes, services, workers, integration, bridge, securite, paymaster proxy, 30 simulations d'attaque |
+| Frontend (TypeScript) | 68 tests | Composants, pages, interactions, auth |
+| **Total** | **397 tests** | |
 
 ### 6.2 Integration continue (CI/CD)
 
 A chaque modification du code, **3 pipelines automatiques** se lancent en parallele :
 
-1. **Contrats** : verification du formatage, compilation, execution des 71 tests, rapport de consommation de gas.
-2. **Backend** : installation des dependances, verification des types, execution des 164 tests.
-3. **Frontend** : verification des types, compilation de production.
+1. **Contrats** : verification du formatage, compilation, execution des 87 tests, rapport de consommation de gas.
+2. **Backend** : installation des dependances, verification des types, execution des 242 tests (couverture minimum 60%).
+3. **Frontend** : execution des 68 tests (couverture minimum 50%), verification des types, compilation de production.
 
 Si un seul test echoue, la modification est rejetee. Cela garantit que le code en production est toujours fonctionnel.
 
 ### 6.3 Architecture
 
-La plateforme est composee de **6 contrats intelligents** sur la blockchain et d'une application complete (serveur + interface). L'architecture est modulaire : chaque composant peut etre mis a jour independamment.
+La plateforme est composee de **3 contrats intelligents** sur la blockchain (EventTicket, Marketplace, TicketFactory) et d'une application complete (serveur + interface). L'architecture est modulaire : chaque composant peut etre mis a jour independamment.
 
 | Couche | Technologie | Maturite |
 |--------|-------------|----------|
@@ -404,8 +405,9 @@ La plateforme est composee de **6 contrats intelligents** sur la blockchain et d
 | Serveur | Node.js + Fastify + TypeScript | Production-ready |
 | Base de donnees | PostgreSQL + Redis | Standard industriel |
 | File d'attente | BullMQ | Standard industriel |
-| Interface | Next.js + React | Standard industriel |
-| Authentification | Web3Auth + JWT | Standard industriel |
+| Interface | Next.js + React + StarkZap SDK | Standard industriel |
+| Authentification | Cartridge Controller (passkeys, biometrie) + JWT | Standard industriel |
+| Paymaster | AVNU Paymaster (transactions gasless) | Ecosysteme Starknet |
 | Paiement | Stripe + Weero + crypto (STRK/USDC/USDT) | Standard industriel |
 
 ---
@@ -418,10 +420,10 @@ La plateforme est composee de **6 contrats intelligents** sur la blockchain et d
 | Copie de QR code | Le QR change toutes les 25 secondes et est signe cryptographiquement |
 | Double utilisation d'un billet | Mecanisme atomique : un seul passage possible, meme en cas de scan simultane |
 | Revente abusive | Plafond de prix applique par le contrat intelligent (non modifiable) |
-| Vol de compte | Recuperation avec gardien + delai de securite de 24 heures |
+| Vol de compte | Recuperation via infrastructure Cartridge, passkeys biometriques |
 | Attaques sur la plateforme | Limitation de debit, validation stricte de toutes les donnees, en-tetes de securite |
 | Notification forgee (bridge) | Signature cryptographique obligatoire sur chaque notification externe |
-| Epuisement du budget Paymaster | Limites quotidiennes et anti-spam par utilisateur |
+| Epuisement du budget Paymaster | Limites quotidiennes par utilisateur via rate limiting Redis (AVNU Paymaster) |
 | Panne reseau au lieu de l'evenement | Mode hors-ligne avec synchronisation automatique |
 
 ---
@@ -440,7 +442,7 @@ La plateforme est composee de **6 contrats intelligents** sur la blockchain et d
 
 | Phase | Fonctionnalite | Statut |
 |-------|---------------|--------|
-| V1 | Contrats intelligents (mint, transfert, marketplace, paymaster, account) | Fait |
+| V1 | Contrats intelligents (mint, transfert, marketplace, factory) | Fait |
 | V2 | Backend complet (paiement, scan, workers, securite) | Fait |
 | V2.1 | Digital Twin Bridge (Eventbrite/Weezevent/etc.) | Fait |
 | V3 | Application mobile native (iOS/Android) | A developper |
@@ -453,16 +455,16 @@ La plateforme est composee de **6 contrats intelligents** sur la blockchain et d
 
 ## 10. Chiffres cles
 
-- **6** contrats intelligents sur blockchain
+- **3** contrats intelligents sur blockchain (EventTicket, Marketplace, TicketFactory)
 - **19** endpoints API (points d'entree du serveur)
-- **235** tests automatises (71 blockchain + 164 serveur)
+- **397** tests automatises (87 blockchain + 242 serveur + 68 frontend)
 - **< 50 ms** temps de validation d'un billet au portique
 - **25 s** rotation du QR code (anti-copie)
-- **24 h** delai de securite pour la recuperation de compte
+- **Passkeys** authentification biometrique via Cartridge Controller
 - **2%** commission marketplace sur les reventes
 - **3** devises crypto acceptees (STRK, USDC, USDT)
 - **0** frais blockchain pour l'utilisateur final (Paymaster)
 
 ---
 
-*Document genere a partir de la documentation technique du projet Starknet NFT Ticketing -- Fevrier 2026*
+*Document genere a partir de la documentation technique du projet Starknet NFT Ticketing -- Mars 2026*

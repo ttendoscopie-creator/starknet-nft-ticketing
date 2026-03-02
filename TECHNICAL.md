@@ -6,7 +6,8 @@
 ┌─────────────┐     ┌─────────────┐     ┌──────────────────┐
 │  Frontend    │────▶│  Backend    │────▶│  Starknet        │
 │  Next.js 14  │     │  Fastify    │     │  Cairo Contracts │
-│  Web3Auth    │     │  BullMQ     │     │  Sepolia / Main  │
+│  StarkZap    │     │  BullMQ     │     │  Sepolia / Main  │
+│  Cartridge   │     │  AVNU PM    │     │                  │
 └─────────────┘     └──────┬──────┘     └──────────────────┘
                            │
                     ┌──────┴──────┐
@@ -31,7 +32,7 @@ External Provider ──webhook──▶ POST /v1/bridge/webhook (HMAC-SHA256)
                           mintTicket() → vault address
                               BridgedTicket (MINTED)
                                     │
-                   User logs in (Web3Auth, email match)
+                   User logs in (Cartridge Controller, email match)
                                     │
                               POST /v1/bridge/claim (JWT)
                                     │
@@ -57,14 +58,16 @@ External Provider ──webhook──▶ POST /v1/bridge/webhook (HMAC-SHA256)
 | **EventTicket** | ERC-721 NFT — mint, batch_mint, transfer, mark_used, staff roles, price caps, royalties, soulbound mode, transfer limits, pause mechanism |
 | **TicketFactory** | Deploys one EventTicket per event, pause mechanism, upgradeable ticket class hash |
 | **Marketplace** | P2P resale — list, buy, cancel with CEI anti-reentrancy, 2% platform fee, marketplace whitelist, pause mechanism, events (ListingCreated/Cancelled/Purchased), view functions |
-| **Paymaster** | Per-organizer gas sponsorship — budgets, daily limits, anti-spam (interval + daily tx count), account sponsoring, pause mechanism |
-| **AccountContract** | SNIP-6 abstract account — 24h scoped session keys, guardian + timelock recovery, owner key rotation |
+
+**Wallet & Gas (external, via StarkZap SDK):**
+- **Cartridge Controller** — native Starknet wallet with passkeys, biometrics, social login, session keys, and account recovery (replaces custom AccountContract)
+- **AVNU Paymaster** — gasless transactions for end users, proxied through backend with per-user rate limiting (replaces custom Paymaster contract)
 
 ## Backend (TypeScript)
 
 | Layer | Components |
 |-------|------------|
-| **Routes** | `scan`, `tickets`, `events`, `marketplace`, `payments` (crypto), `webhooks` (Stripe), `bridge` (Digital Twin) |
+| **Routes** | `scan`, `tickets`, `events`, `marketplace`, `payments` (crypto), `webhooks` (Stripe), `bridge` (Digital Twin), `paymaster` (AVNU proxy) |
 | **Services** | `qr` (HMAC-SHA256 signing), `starknet` (mint/transfer/markUsed with circuit breaker + retry, ERC20 verification), `bridge` (HMAC webhook verification), `ticket` (Prisma CRUD) |
 | **Auth** | JWT with roles: `organizer`, `staff`, `fan` — typed via Fastify module augmentation |
 | **Queue** | BullMQ workers for async on-chain operations (mint, markUsed, bridgeMint, bridgeClaim) |
@@ -86,7 +89,7 @@ External Provider ──webhook──▶ POST /v1/bridge/webhook (HMAC-SHA256)
 | Staff | `/staff` | Team management |
 | Analytics | `/analytics` | Event statistics |
 
-**Auth**: Web3Auth social login -> derived Starknet key, offline mode with local cache.
+**Auth**: StarkZap SDK with Cartridge Controller — passkeys/biometrics, social login. Session policies scoped to marketplace contract methods. Offline mode with local cache.
 
 ## Database Schema
 
@@ -98,7 +101,7 @@ Organizer ──< Event ──< Ticket ──< ScanLog
                 └──< PendingMint
 ```
 
-- **Organizer** — treasury address, paymaster address, API key (used for bridge HMAC)
+- **Organizer** — treasury address, AVNU API key (optional, for per-organizer gas sponsoring), API key (used for bridge HMAC)
 - **Event** — contract address, max supply, resale cap, royalty bps, accepted currencies, payment token address
 - **Ticket** — token ID, owner, status (`AVAILABLE` / `LISTED` / `USED` / `CANCELLED` / `REVOKED`)
 - **Listing** — seller, price, on-chain listing ID
@@ -127,6 +130,7 @@ Organizer ──< Event ──< Ticket ──< ScanLog
 | `POST` | `/v1/marketplace/listings` | fan | Create listing |
 | `DELETE` | `/v1/marketplace/listings/:id` | fan | Cancel listing |
 | `POST` | `/v1/payments/verify-crypto` | fan | Verify on-chain ERC20 payment (STRK/USDC/USDT) |
+| `POST` | `/v1/paymaster` | fan | AVNU gasless transaction proxy (rate-limited) |
 | `POST` | `/v1/bridge/webhook` | HMAC | External ticketing webhook (auto-mints NFT) |
 | `POST` | `/v1/bridge/claim` | fan | Claim bridged tickets (transfer from vault to wallet) |
 | `GET` | `/v1/bridge/status/:id` | fan | Check bridged ticket status |
@@ -137,17 +141,19 @@ Organizer ──< Event ──< Ticket ──< ScanLog
 **On-chain**
 - CEI pattern in Marketplace (anti-reentrancy)
 - Price cap enforced on-chain (`resale_cap_bps`)
-- Session keys scoped and time-limited (max 24h)
-- Account recovery with guardian + 24h timelock
-- Session keys auto-revoked on recovery execution
-- Session keys auto-revoked on owner key rotation (prevents old session reuse)
 - Zero-address validation on all mint and transfer recipients
 - Owner-only access control on TicketFactory `create_event`
 - `total_supply` decremented on ticket revocation (supply consistency)
 - Transfer count tracking on `TicketTransferred` events (enforces transfer limits)
-- Emergency pause mechanism on all contracts (EventTicket, TicketFactory, Marketplace, Paymaster)
+- Emergency pause mechanism on all contracts (EventTicket, TicketFactory, Marketplace)
 - Batch mint with pre-validation (supply check, zero-address guard, duplicate detection)
 - Marketplace emits ListingCreated/Cancelled/Purchased events for indexing
+
+**Wallet & Account Security (via Cartridge Controller)**
+- Session keys scoped to specific contract methods and time-limited
+- Passkey/biometric authentication (no seed phrases)
+- Account recovery via Cartridge infrastructure
+- Session keys auto-revoked on recovery
 
 **Backend**
 - Helmet security headers (HSTS, X-Frame-Options, etc.)
@@ -171,13 +177,14 @@ Organizer ──< Event ──< Ticket ──< ScanLog
 - Atomic tokenId allocation via Redis INCR (prevents duplicate token IDs)
 - Correlation ID request tracing (`X-Request-Id` header propagation)
 - Global error handler (no stack trace leaks on 5xx, sanitized messages)
+- AVNU paymaster proxy with Redis-based per-user daily rate limiting
 
 **Security audit**
 - Red-team hostile audit: 49 vulnerabilities identified and fixed (8 CRITICAL, 20 HIGH, 21 MEDIUM)
 - 30 attack simulation tests validating defenses: webhook forgery, ticket theft, double-claim races, JWT manipulation, replay attacks, payload injection, privilege escalation, scan abuse, cross-organizer breaches, soulbound bypass
 
 **Frontend**
-- Content Security Policy (Web3Auth + RPC domains whitelisted)
+- Content Security Policy (Cartridge Controller + RPC domains whitelisted)
 - HSTS with preload, Permissions-Policy
 - AbortController on all fetch calls (prevents memory leaks)
 
@@ -238,11 +245,11 @@ npx tsx demo.ts
 ### Run Tests
 
 ```bash
-# Cairo contracts (139 tests)
+# Cairo contracts (87 tests)
 cd contracts
 snforge test
 
-# Backend (235 tests, with coverage)
+# Backend (242 tests, with coverage)
 cd backend
 npm test -- --coverage
 
@@ -259,14 +266,14 @@ GitHub Actions runs 3 parallel jobs on every push/PR to `main`:
 
 | Job | Steps | Duration |
 |-----|-------|----------|
-| **Contracts** | `scarb fmt --check` -> `scarb build` -> `snforge test` (139 tests) -> gas report -> artifact upload | ~2m |
-| **Backend** | `npm ci` -> `prisma generate` -> `tsc --noEmit` -> `vitest --coverage` (235 tests, min 60%) | ~25s |
+| **Contracts** | `scarb fmt --check` -> `scarb build` -> `snforge test` (87 tests) -> gas report -> artifact upload | ~2m |
+| **Backend** | `npm ci` -> `prisma generate` -> `tsc --noEmit` -> `vitest --coverage` (242 tests, min 60%) | ~25s |
 | **Frontend** | `npm ci` -> `vitest --coverage` (68 tests, min 50%) -> `tsc --noEmit` -> `next build` | ~50s |
 
 ## Main Flow
 
 ```
-Fan signs in (Web3Auth social login)
+Fan signs in (Cartridge Controller via StarkZap — passkeys, biometrics, social login)
   -> Pays via Stripe or crypto (STRK/USDC/USDT)
   -> Backend creates PendingMint (Prisma)
   -> BullMQ worker mints NFT on-chain
@@ -285,7 +292,7 @@ External ticketing provider sells ticket
   -> Backend validates signature + creates BridgedTicket (PENDING)
   -> bridgeMint worker mints NFT to vault address
   -> BridgedTicket updated to MINTED
-  -> Buyer logs in via Web3Auth (same email)
+  -> Buyer logs in via Cartridge Controller (same email)
   -> POST /v1/bridge/claim with JWT
   -> bridgeClaim worker transfers NFT from vault to user wallet
   -> BridgedTicket updated to CLAIMED
@@ -301,9 +308,10 @@ External ticketing provider sells ticket
 | Database | PostgreSQL 16 (Prisma 5), Redis 7 (ioredis) |
 | Queue | BullMQ 5 |
 | Frontend | Next.js 14, React 18, Tailwind CSS 3 |
-| Auth | Web3Auth v8, JWT |
+| Auth | StarkZap SDK, Cartridge Controller (passkeys, biometrics) |
+| Gas | AVNU Paymaster (gasless transactions) |
 | Payments | Stripe, STRK/USDC/USDT (on-chain ERC20) |
-| Blockchain | Starknet (starknet.js v6) |
+| Blockchain | Starknet (starknet.js v9) |
 | Testing | snforge (Cairo), Vitest (TypeScript) |
 | CI/CD | GitHub Actions |
 
@@ -312,8 +320,8 @@ External ticketing provider sells ticket
 ```
 starknet-nft-ticketing/
 ├── contracts/              # Cairo smart contracts
-│   ├── src/                # Contract sources (6 contracts)
-│   └── tests/              # snforge tests
+│   ├── src/                # Contract sources (4 contracts)
+│   └── tests/              # snforge tests (87 tests)
 ├── backend/                # Fastify API
 │   ├── src/
 │   │   ├── api/            # Routes + middleware
@@ -321,7 +329,7 @@ starknet-nft-ticketing/
 │   │   ├── queue/          # BullMQ job definitions
 │   │   ├── indexer/        # Starknet event indexer
 │   │   └── db/             # Prisma singleton + schema + migrations + Redis
-│   └── vitest.config.ts    # 235 Vitest tests
+│   └── vitest.config.ts    # 242 Vitest tests
 ├── frontend/               # Next.js app
 │   ├── app/                # Pages (App Router)
 │   └── components/         # React components

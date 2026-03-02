@@ -3,7 +3,9 @@ const nextConfig = {
   reactStrictMode: true,
   env: {
     NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001",
-    NEXT_PUBLIC_WEB3AUTH_CLIENT_ID: process.env.NEXT_PUBLIC_WEB3AUTH_CLIENT_ID || "",
+    NEXT_PUBLIC_STARKNET_NETWORK: process.env.NEXT_PUBLIC_STARKNET_NETWORK || "sepolia",
+    NEXT_PUBLIC_FACTORY_ADDRESS: process.env.NEXT_PUBLIC_FACTORY_ADDRESS || "",
+    NEXT_PUBLIC_MARKETPLACE_ADDRESS: process.env.NEXT_PUBLIC_MARKETPLACE_ADDRESS || "",
   },
   async headers() {
     return [
@@ -26,12 +28,12 @@ const nextConfig = {
             key: "Content-Security-Policy",
             value: [
               "default-src 'self'",
-              "script-src 'self' 'unsafe-eval' 'unsafe-inline' https://auth.web3auth.io",
+              "script-src 'self' 'unsafe-eval' 'unsafe-inline' https://*.cartridge.gg",
               "style-src 'self' 'unsafe-inline'",
               "img-src 'self' data: blob:",
               "font-src 'self'",
-              "connect-src 'self' https://*.web3auth.io https://*.blastapi.io https://*.alchemy.com wss://*.web3auth.io " + (process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"),
-              "frame-src 'self' https://auth.web3auth.io",
+              "connect-src 'self' https://*.cartridge.gg https://*.blastapi.io https://*.alchemy.com wss://*.cartridge.gg " + (process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"),
+              "frame-src 'self' https://*.cartridge.gg",
             ].join("; "),
           },
         ],

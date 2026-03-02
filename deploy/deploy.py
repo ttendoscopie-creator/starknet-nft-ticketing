@@ -63,7 +63,6 @@ async def main():
     # 1. Read compiled contracts
     event_ticket_compiled = read_contract("starknet_nft_ticketing_EventTicket")
     marketplace_compiled = read_contract("starknet_nft_ticketing_Marketplace")
-    paymaster_compiled = read_contract("starknet_nft_ticketing_Paymaster")
     factory_compiled = read_contract("starknet_nft_ticketing_TicketFactory")
 
     deployments = {}
@@ -103,31 +102,7 @@ async def main():
     print(f"  -> {STARKSCAN_URL}/contract/{hex(marketplace_address)}")
     deployments["marketplace_address"] = hex(marketplace_address)
 
-    # 4. Deploy Paymaster
-    print("\n--- Deploying Paymaster ---")
-    paymaster_declare = await Contract.declare_v3(
-        account=account,
-        compiled_contract=paymaster_compiled["sierra"],
-        compiled_contract_casm=paymaster_compiled["casm"],
-    )
-    await paymaster_declare.wait_for_acceptance()
-
-    paymaster_deploy = await paymaster_declare.deploy_v3(
-        constructor_args={
-            "owner": DEPLOYER_ADDRESS,
-            "strk_token": STRK_ADDRESS,
-            "max_gas_per_tx": 500000,
-            "max_txs_per_day": 100,
-            "min_interval": 60,
-        },
-    )
-    await paymaster_deploy.wait_for_acceptance()
-    paymaster_address = paymaster_deploy.deployed_contract.address
-    print(f"Paymaster: {hex(paymaster_address)}")
-    print(f"  -> {STARKSCAN_URL}/contract/{hex(paymaster_address)}")
-    deployments["paymaster_address"] = hex(paymaster_address)
-
-    # 5. Deploy TicketFactory
+    # 4. Deploy TicketFactory
     print("\n--- Deploying TicketFactory ---")
     factory_declare = await Contract.declare_v3(
         account=account,
@@ -157,7 +132,6 @@ async def main():
     print("\n--- Add to .env ---")
     print(f"FACTORY_ADDRESS={hex(factory_address)}")
     print(f"MARKETPLACE_ADDRESS={hex(marketplace_address)}")
-    print(f"PAYMASTER_ADDRESS={hex(paymaster_address)}")
 
     print("\nDeployment complete!")
 

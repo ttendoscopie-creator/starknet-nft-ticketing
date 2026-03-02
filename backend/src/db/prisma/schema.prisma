@@ -8,14 +8,14 @@ datasource db {
 }
 
 model Organizer {
-  id               String   @id @default(uuid())
-  name             String
-  treasuryAddress  String
-  paymasterAddress String
-  apiKey           String   @unique
-  createdAt        DateTime @default(now())
-  events           Event[]
-  bridgedTickets   BridgedTicket[]
+  id              String   @id @default(uuid())
+  name            String
+  treasuryAddress String
+  avnuApiKey      String?
+  apiKey          String   @unique
+  createdAt       DateTime @default(now())
+  events          Event[]
+  bridgedTickets  BridgedTicket[]
 }
 
 model Event {

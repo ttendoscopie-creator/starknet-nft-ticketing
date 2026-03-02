@@ -2,25 +2,20 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import type { ReactNode } from "react";
-import { Web3Auth } from "@web3auth/modal";
-import { CommonPrivateKeyProvider } from "@web3auth/base-provider";
-import { CHAIN_NAMESPACES } from "@web3auth/base";
-import { ec } from "starknet";
+import { StarkZap, OnboardStrategy } from "starkzap";
 import { AuthContext, useAuth } from "./auth-context";
 import "./globals.css";
 
-// --- Web3Auth Config ---
+// --- StarkZap / Cartridge Config ---
 
-const CLIENT_ID = process.env.NEXT_PUBLIC_WEB3AUTH_CLIENT_ID || "";
-
-const chainConfig = {
-  chainNamespace: CHAIN_NAMESPACES.OTHER,
-  chainId: "0x534e5f5345504f4c4941",
-  rpcTarget: "https://starknet-sepolia.public.blastapi.io",
-  displayName: "Starknet Sepolia",
-  ticker: "STRK",
-  tickerName: "Starknet",
-};
+const NETWORK = (process.env.NEXT_PUBLIC_STARKNET_NETWORK || "sepolia") as
+  | "sepolia"
+  | "mainnet";
+const API_URL =
+  process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
+const FACTORY_ADDRESS = process.env.NEXT_PUBLIC_FACTORY_ADDRESS || "";
+const MARKETPLACE_ADDRESS =
+  process.env.NEXT_PUBLIC_MARKETPLACE_ADDRESS || "";
 
 // --- Auth Provider ---
 
@@ -28,86 +23,70 @@ function AuthProvider({ children }: { children: ReactNode }) {
   const [walletAddress, setWalletAddress] = useState<string | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
-  const web3authRef = useRef<Web3Auth | null>(null);
+  const sdkRef = useRef<StarkZap | null>(null);
+  const walletRef = useRef<unknown>(null);
 
   useEffect(() => {
     const stored = sessionStorage.getItem("wallet_address");
     if (stored) setWalletAddress(stored);
 
-    const privateKeyProvider = new CommonPrivateKeyProvider({ config: { chainConfig } });
+    const storedToken = sessionStorage.getItem("auth_token");
+    if (storedToken) setToken(storedToken);
 
-    const web3auth = new Web3Auth({
-      clientId: CLIENT_ID,
-      web3AuthNetwork: "sapphire_devnet",
-      privateKeyProvider,
+    const sdk = new StarkZap({
+      network: NETWORK,
+      paymaster: {
+        nodeUrl: `${API_URL}/v1/paymaster`,
+      },
     });
-
-    web3authRef.current = web3auth;
-
-    web3auth
-      .initModal()
-      .then(async () => {
-        setReady(true);
-        if (web3auth.connected && web3auth.provider) {
-          await extractCredentials(web3auth);
-        }
-      })
-      .catch((err) => {
-        console.error("Web3Auth init failed:", err);
-        setReady(true);
-      });
-  }, []);
-
-  const extractCredentials = useCallback(async (web3auth: Web3Auth) => {
-    try {
-      const provider = web3auth.provider;
-      if (!provider) return;
-
-      const privKeyHex = (await provider.request({ method: "private_key" })) as string;
-      const starkKey = ec.starkCurve.getStarkKey(privKeyHex);
-      const address = starkKey.startsWith("0x") ? starkKey : "0x" + starkKey;
-
-      setWalletAddress(address);
-      sessionStorage.setItem("wallet_address", address);
-
-      try {
-        const authInfo = await web3auth.authenticateUser();
-        setToken(authInfo.idToken);
-      } catch {
-        // idToken not available — use address as fallback identifier
-      }
-    } catch (err) {
-      console.error("Failed to extract credentials:", err);
-    }
+    sdkRef.current = sdk;
+    setReady(true);
   }, []);
 
   const login = useCallback(async () => {
-    const web3auth = web3authRef.current;
-    if (!web3auth || !ready) return;
+    const sdk = sdkRef.current;
+    if (!sdk || !ready) return;
 
     try {
-      await web3auth.connect();
-      if (web3auth.connected) {
-        await extractCredentials(web3auth);
+      // Build Cartridge session policies for contracts users interact with
+      const policies: Array<{ target: string; method: string }> = [];
+
+      if (MARKETPLACE_ADDRESS) {
+        policies.push(
+          { target: MARKETPLACE_ADDRESS, method: "list_ticket" },
+          { target: MARKETPLACE_ADDRESS, method: "buy_ticket" },
+          { target: MARKETPLACE_ADDRESS, method: "cancel_listing" },
+        );
       }
+      if (FACTORY_ADDRESS) {
+        policies.push({
+          target: FACTORY_ADDRESS,
+          method: "create_event",
+        });
+      }
+
+      const onboard = await sdk.onboard({
+        strategy: OnboardStrategy.Cartridge,
+        cartridge: { policies },
+      });
+
+      const wallet = onboard.wallet;
+      walletRef.current = wallet;
+      const address = wallet.address;
+
+      setWalletAddress(address);
+      sessionStorage.setItem("wallet_address", address);
     } catch (err) {
       console.error("Login failed:", err);
     }
-  }, [ready, extractCredentials]);
+  }, [ready]);
 
   const logout = useCallback(async () => {
-    const web3auth = web3authRef.current;
-    if (!web3auth) return;
-
-    try {
-      await web3auth.logout();
-    } catch {
-      // Already logged out
-    }
-
+    walletRef.current = null;
     setWalletAddress(null);
     setToken(null);
     sessionStorage.removeItem("wallet_address");
+    sessionStorage.removeItem("auth_token");
   }, []);
 
   return (
@@ -192,7 +171,10 @@ export default function RootLayout({ children }: { children: ReactNode }) {
     <html lang="en">
       <head>
         <title>NFT Tickets — Starknet Event Ticketing</title>
-        <meta name="description" content="Secure, transparent event ticketing powered by Starknet. Buy tickets, resell safely with price caps, and validate entry with rotating QR codes." />
+        <meta
+          name="description"
+          content="Secure, transparent event ticketing powered by Starknet. Buy tickets, resell safely with price caps, and validate entry with rotating QR codes."
+        />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <link rel="icon" href="/favicon.ico" />
       </head>
