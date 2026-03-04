@@ -14,6 +14,7 @@ function renderWithAuth(overrides: Partial<AuthContextType> = {}) {
     token: null,
     login: mockLogin,
     logout: mockLogout,
+    getAccount: () => null,
     ...overrides,
   };
 

@@ -35,6 +35,7 @@ describe("auth-context", () => {
       token: "jwt-123",
       login: mockLogin,
       logout: mockLogout,
+      getAccount: () => null,
     };
 
     render(
@@ -64,6 +65,7 @@ describe("auth-context", () => {
       token: "tok",
       login: vi.fn(),
       logout: vi.fn(),
+      getAccount: () => null,
     };
 
     render(

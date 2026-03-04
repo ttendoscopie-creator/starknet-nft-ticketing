@@ -144,7 +144,7 @@ export async function paymentRoutes(app: FastifyInstance): Promise<void> {
           price_data: {
             currency: "eur",
             product_data: { name: event.name },
-            unit_amount: event.primaryPrice,
+            unit_amount: Number(event.primaryPrice),
           },
           quantity: 1,
         },
