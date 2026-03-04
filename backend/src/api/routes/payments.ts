@@ -1,5 +1,6 @@
 import { FastifyInstance } from "fastify";
 import { z } from "zod";
+import Stripe from "stripe";
 import { Prisma } from "@prisma/client";
 import { prisma } from "../../db/prisma";
 import { Queue } from "bullmq";
@@ -7,6 +8,9 @@ import { bullmqConnection } from "../../db/redis";
 import { authMiddleware } from "../middleware/auth";
 import { verifyERC20Transfer } from "../../services/starknet.service";
 import { paymentRateLimit } from "../middleware/rateLimit";
+
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
+const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:3000";
 
 const mintQueue = new Queue("mint", {
   connection: bullmqConnection,
@@ -105,5 +109,55 @@ export async function paymentRoutes(app: FastifyInstance): Promise<void> {
       cryptoTxHash: txHash,
       currency,
     });
+  });
+
+  const CreateCheckoutSessionSchema = z.object({
+    eventId: z.string().uuid(),
+    buyerWalletAddress: z.string().optional(),
+  });
+
+  app.post("/v1/payments/create-checkout-session", { ...paymentRateLimit }, async (request, reply) => {
+    const parseResult = CreateCheckoutSessionSchema.safeParse(request.body);
+    if (!parseResult.success) {
+      return reply.code(400).send({ error: "Invalid input", details: parseResult.error.issues });
+    }
+
+    const { eventId, buyerWalletAddress } = parseResult.data;
+
+    const event = await prisma.event.findUnique({
+      where: { id: eventId },
+      include: { _count: { select: { tickets: true } } },
+    });
+    if (!event) {
+      return reply.code(404).send({ error: "Event not found" });
+    }
+
+    const remaining = event.maxSupply - event._count.tickets;
+    if (remaining <= 0) {
+      return reply.code(400).send({ error: "Event is sold out" });
+    }
+
+    const session = await stripe.checkout.sessions.create({
+      mode: "payment",
+      line_items: [
+        {
+          price_data: {
+            currency: "eur",
+            product_data: { name: event.name },
+            unit_amount: event.primaryPrice,
+          },
+          quantity: 1,
+        },
+      ],
+      metadata: {
+        event_id: eventId,
+        buyer_email: request.user!.userId,
+        buyer_wallet_address: buyerWalletAddress ?? "",
+      },
+      success_url: `${FRONTEND_URL}/checkout/${eventId}/success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${FRONTEND_URL}/checkout/${eventId}?canceled=true`,
+    });
+
+    return reply.code(201).send({ url: session.url });
   });
 }

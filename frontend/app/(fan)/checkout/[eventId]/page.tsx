@@ -12,6 +12,7 @@ const RPC_URL =
   process.env.NEXT_PUBLIC_STARKNET_RPC ||
   "https://starknet-sepolia.public.blastapi.io";
 
+type PaymentMethod = "select" | "crypto" | "stripe";
 type CheckoutState = "idle" | "sending" | "confirming" | "verifying" | "success" | "error";
 
 interface EventData {
@@ -33,7 +34,9 @@ export default function CheckoutPage() {
   const [event, setEvent] = useState<EventData | null>(null);
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("select");
   const [state, setState] = useState<CheckoutState>("idle");
+  const [stripeLoading, setStripeLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [txHash, setTxHash] = useState<string | null>(null);
 
@@ -139,6 +142,34 @@ export default function CheckoutPage() {
     }
   }, [event, walletAddress, token, getAccount, eventId]);
 
+  const handleStripe = useCallback(async () => {
+    if (!event || !token) return;
+    setStripeLoading(true);
+    setErrorMsg(null);
+    try {
+      const res = await fetch(`${API_URL}/v1/payments/create-checkout-session`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          eventId,
+          buyerWalletAddress: walletAddress || undefined,
+        }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || `Failed to create checkout session (${res.status})`);
+      }
+      const { url } = await res.json();
+      window.location.href = url;
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : "Payment failed");
+      setStripeLoading(false);
+    }
+  }, [event, token, eventId, walletAddress]);
+
   if (loading) {
     return (
       <div className="mx-auto max-w-lg py-12">
@@ -216,11 +247,11 @@ export default function CheckoutPage() {
               View my tickets
             </a>
           </div>
-        ) : state === "error" ? (
+        ) : state === "error" || errorMsg ? (
           <div className="rounded-lg bg-red-50 dark:bg-red-900/20 p-4 mb-4">
             <p className="text-red-600 dark:text-red-400 text-sm mb-3">{errorMsg}</p>
             <button
-              onClick={() => setState("idle")}
+              onClick={() => { setState("idle"); setErrorMsg(null); setPaymentMethod("select"); }}
               className="rounded-lg border border-red-300 px-4 py-2 text-sm text-red-600 hover:bg-red-100 dark:border-red-700 dark:text-red-400 dark:hover:bg-red-900/30 transition"
             >
               Try again
@@ -233,17 +264,44 @@ export default function CheckoutPage() {
           >
             Connect wallet
           </button>
+        ) : paymentMethod === "select" ? (
+          <div className="space-y-3">
+            <button
+              onClick={() => { handleStripe(); }}
+              disabled={soldOut || stripeLoading}
+              className="w-full rounded-lg bg-primary px-6 py-3 text-white font-medium hover:bg-indigo-600 transition disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {stripeLoading ? "Redirecting..." : "Pay by card"}
+            </button>
+            {acceptsUSDC && (
+              <button
+                onClick={() => setPaymentMethod("crypto")}
+                disabled={soldOut}
+                className="w-full rounded-lg border border-gray-300 dark:border-gray-600 px-6 py-3 text-gray-900 dark:text-white font-medium hover:bg-gray-50 dark:hover:bg-gray-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Pay with crypto (USDC)
+              </button>
+            )}
+          </div>
         ) : (
-          <button
-            onClick={handlePay}
-            disabled={soldOut || !acceptsUSDC || state !== "idle"}
-            className="w-full rounded-lg bg-primary px-6 py-3 text-white font-medium hover:bg-indigo-600 transition disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {state === "sending" && "Sending transaction..."}
-            {state === "confirming" && "Waiting for confirmation..."}
-            {state === "verifying" && "Verifying payment..."}
-            {state === "idle" && `Pay ${formatUSDC(event.primaryPrice)} USDC`}
-          </button>
+          <div>
+            <button
+              onClick={() => setPaymentMethod("select")}
+              className="text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 mb-3"
+            >
+              &larr; Back
+            </button>
+            <button
+              onClick={handlePay}
+              disabled={soldOut || !acceptsUSDC || state !== "idle"}
+              className="w-full rounded-lg bg-primary px-6 py-3 text-white font-medium hover:bg-indigo-600 transition disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {state === "sending" && "Sending transaction..."}
+              {state === "confirming" && "Waiting for confirmation..."}
+              {state === "verifying" && "Verifying payment..."}
+              {state === "idle" && `Pay ${formatUSDC(event.primaryPrice)} USDC`}
+            </button>
+          </div>
         )}
 
         {txHash && state !== "success" && state !== "idle" && (

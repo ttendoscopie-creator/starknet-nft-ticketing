@@ -25,6 +25,21 @@ vi.mock("../../../services/starknet.service", () => ({
   verifyERC20Transfer: mockVerifyERC20Transfer,
 }));
 
+// Mock Stripe
+const { mockStripeCheckoutCreate } = vi.hoisted(() => ({
+  mockStripeCheckoutCreate: vi.fn(),
+}));
+
+vi.mock("stripe", () => ({
+  default: vi.fn().mockImplementation(() => ({
+    checkout: {
+      sessions: {
+        create: mockStripeCheckoutCreate,
+      },
+    },
+  })),
+}));
+
 // Mock BullMQ Queue
 const { mockMintQueueAdd } = vi.hoisted(() => ({
   mockMintQueueAdd: vi.fn().mockResolvedValue({}),
@@ -197,5 +212,68 @@ describe("POST /v1/payments/verify-crypto", () => {
       buyerEmail: expect.any(String),
       buyerWalletAddress: validPayment.buyerWalletAddress,
     });
+  });
+});
+
+const mockEventWithCount = {
+  id: "550e8400-e29b-41d4-a716-446655440000",
+  name: "Test Concert",
+  primaryPrice: 1500,
+  maxSupply: 100,
+  _count: { tickets: 10 },
+};
+
+describe("POST /v1/payments/create-checkout-session", () => {
+  it("returns 201 with checkout URL", async () => {
+    mockPrisma.event.findUnique.mockResolvedValue(mockEventWithCount);
+    mockStripeCheckoutCreate.mockResolvedValue({
+      url: "https://checkout.stripe.com/pay/cs_test_123",
+    });
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/v1/payments/create-checkout-session",
+      payload: { eventId: "550e8400-e29b-41d4-a716-446655440000" },
+      headers: { authorization: `Bearer ${makeToken()}` },
+    });
+    expect(res.statusCode).toBe(201);
+    expect(res.json().url).toBe("https://checkout.stripe.com/pay/cs_test_123");
+    expect(mockStripeCheckoutCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        mode: "payment",
+        metadata: expect.objectContaining({
+          event_id: "550e8400-e29b-41d4-a716-446655440000",
+        }),
+      })
+    );
+  });
+
+  it("returns 404 if event does not exist", async () => {
+    mockPrisma.event.findUnique.mockResolvedValue(null);
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/v1/payments/create-checkout-session",
+      payload: { eventId: "550e8400-e29b-41d4-a716-446655440000" },
+      headers: { authorization: `Bearer ${makeToken()}` },
+    });
+    expect(res.statusCode).toBe(404);
+    expect(res.json().error).toBe("Event not found");
+  });
+
+  it("returns 400 if event is sold out", async () => {
+    mockPrisma.event.findUnique.mockResolvedValue({
+      ...mockEventWithCount,
+      _count: { tickets: 100 },
+    });
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/v1/payments/create-checkout-session",
+      payload: { eventId: "550e8400-e29b-41d4-a716-446655440000" },
+      headers: { authorization: `Bearer ${makeToken()}` },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe("Event is sold out");
   });
 });

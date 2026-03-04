@@ -41,7 +41,7 @@ A decentralized event ticketing platform on Starknet. Every ticket is a unique N
 | **Wallet** | Connexion Cartridge Controller via StarkZap (passkeys, biometrie, social login) |
 | **Digital Twin Bridge** | Pont automatique Eventbrite/Weezevent -> NFT Starknet |
 | **Securite** | Soulbound, recovery, sessions Cartridge, circuit breaker, audit red-team (49 correctifs) |
-| **Tests** | 404 tests automatises (87 Cairo + 243 backend + 74 frontend), dont 30 simulations d'attaque |
+| **Tests** | 414 tests automatises (87 Cairo + 246 backend + 81 frontend), dont 30 simulations d'attaque |
 | **CI/CD** | GitHub Actions, 3 pipelines paralleles |
 
 ---

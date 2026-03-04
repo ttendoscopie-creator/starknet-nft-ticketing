@@ -101,6 +101,12 @@ describe("CheckoutPage", () => {
     renderWithAuth();
 
     await waitFor(() => {
+      expect(screen.getByText("Pay with crypto (USDC)")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText("Pay with crypto (USDC)"));
+
+    await waitFor(() => {
       expect(screen.getByText(/Pay 5.00 USDC/)).toBeInTheDocument();
     });
 
@@ -122,6 +128,12 @@ describe("CheckoutPage", () => {
       .mockResolvedValueOnce({ ok: true, json: async () => ({ id: "mint-1", status: "PENDING" }) });
 
     renderWithAuth();
+
+    await waitFor(() => {
+      expect(screen.getByText("Pay with crypto (USDC)")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText("Pay with crypto (USDC)"));
 
     await waitFor(() => {
       expect(screen.getByText(/Pay 5.00 USDC/)).toBeInTheDocument();
@@ -148,6 +160,12 @@ describe("CheckoutPage", () => {
     renderWithAuth();
 
     await waitFor(() => {
+      expect(screen.getByText("Pay with crypto (USDC)")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText("Pay with crypto (USDC)"));
+
+    await waitFor(() => {
       expect(screen.getByText(/Pay 5.00 USDC/)).toBeInTheDocument();
     });
 
@@ -171,5 +189,67 @@ describe("CheckoutPage", () => {
     await waitFor(() => {
       expect(screen.getByText("Event not found")).toBeInTheDocument();
     });
+  });
+
+  it("shows both Stripe and Crypto payment methods", async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => mockEvent,
+    });
+
+    renderWithAuth();
+
+    await waitFor(() => {
+      expect(screen.getByText("Pay by card")).toBeInTheDocument();
+    });
+    expect(screen.getByText("Pay with crypto (USDC)")).toBeInTheDocument();
+  });
+
+  it("calls create-checkout-session when Pay by card is clicked", async () => {
+    mockFetch
+      .mockResolvedValueOnce({ ok: true, json: async () => mockEvent })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ url: "https://checkout.stripe.com/test" }) });
+
+    // Mock window.location.href
+    const originalLocation = window.location;
+    Object.defineProperty(window, "location", {
+      writable: true,
+      value: { ...originalLocation, href: "" },
+    });
+
+    renderWithAuth();
+
+    await waitFor(() => {
+      expect(screen.getByText("Pay by card")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText("Pay by card"));
+
+    await waitFor(() => {
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining("/v1/payments/create-checkout-session"),
+        expect.objectContaining({ method: "POST" })
+      );
+    });
+
+    // Restore
+    Object.defineProperty(window, "location", {
+      writable: true,
+      value: originalLocation,
+    });
+  });
+
+  it("shows only Pay by card when event does not accept USDC", async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ ...mockEvent, acceptedCurrencies: ["STRK"] }),
+    });
+
+    renderWithAuth();
+
+    await waitFor(() => {
+      expect(screen.getByText("Pay by card")).toBeInTheDocument();
+    });
+    expect(screen.queryByText("Pay with crypto (USDC)")).not.toBeInTheDocument();
   });
 });
