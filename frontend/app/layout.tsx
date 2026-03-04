@@ -16,6 +16,8 @@ const API_URL =
 const FACTORY_ADDRESS = process.env.NEXT_PUBLIC_FACTORY_ADDRESS || "";
 const MARKETPLACE_ADDRESS =
   process.env.NEXT_PUBLIC_MARKETPLACE_ADDRESS || "";
+const USDC_ADDRESS =
+  "0x053b40a647cedfca6ca84f542a0fe36736031905a9639a7f19a3c1e66bfd5080";
 
 // --- Auth Provider ---
 
@@ -65,6 +67,9 @@ function AuthProvider({ children }: { children: ReactNode }) {
         });
       }
 
+      // ERC20 USDC transfer policy for crypto payments
+      policies.push({ target: USDC_ADDRESS, method: "transfer" });
+
       const onboard = await sdk.onboard({
         strategy: OnboardStrategy.Cartridge,
         cartridge: { policies },
@@ -80,6 +85,10 @@ function AuthProvider({ children }: { children: ReactNode }) {
       console.error("Login failed:", err);
     }
   }, [ready]);
+
+  const getAccount = useCallback(() => {
+    return walletRef.current;
+  }, []);
 
   const logout = useCallback(async () => {
     walletRef.current = null;
@@ -97,6 +106,7 @@ function AuthProvider({ children }: { children: ReactNode }) {
         token,
         login,
         logout,
+        getAccount,
       }}
     >
       {children}

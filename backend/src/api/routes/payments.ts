@@ -2,9 +2,19 @@ import { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { Prisma } from "@prisma/client";
 import { prisma } from "../../db/prisma";
+import { Queue } from "bullmq";
+import { bullmqConnection } from "../../db/redis";
 import { authMiddleware } from "../middleware/auth";
 import { verifyERC20Transfer } from "../../services/starknet.service";
 import { paymentRateLimit } from "../middleware/rateLimit";
+
+const mintQueue = new Queue("mint", {
+  connection: bullmqConnection,
+  defaultJobOptions: {
+    attempts: 5,
+    backoff: { type: "exponential", delay: 2000 },
+  },
+});
 
 const TOKEN_ADDRESSES: Record<string, string> = {
   STRK: "0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d",
@@ -80,6 +90,14 @@ export async function paymentRoutes(app: FastifyInstance): Promise<void> {
       }
       throw err;
     }
+
+    // Queue mint job
+    await mintQueue.add("mint", {
+      pendingMintId: pendingMint.id,
+      eventId,
+      buyerEmail: request.user!.userId,
+      buyerWalletAddress,
+    });
 
     return reply.code(201).send({
       id: pendingMint.id,

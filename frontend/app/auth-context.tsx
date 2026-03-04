@@ -8,6 +8,7 @@ export interface AuthContextType {
   token: string | null;
   login: () => Promise<void>;
   logout: () => Promise<void>;
+  getAccount: () => unknown | null;
 }
 
 export const AuthContext = createContext<AuthContextType>({
@@ -16,6 +17,7 @@ export const AuthContext = createContext<AuthContextType>({
   token: null,
   login: async () => {},
   logout: async () => {},
+  getAccount: () => null,
 });
 
 export function useAuth() {

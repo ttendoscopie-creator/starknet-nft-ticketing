@@ -34,14 +34,14 @@ A decentralized event ticketing platform on Starknet. Every ticket is a unique N
 | | |
 |---|---|
 | **Billets NFT** | ERC-721 sur Starknet, infalsifiables, transferables |
-| **Paiement** | Carte bancaire (Stripe), virement (Weero), crypto (STRK/USDC/USDT) |
+| **Paiement** | Carte bancaire (Stripe), virement (Weero), crypto USDC/USDT/STRK (checkout on-chain + mint auto) |
 | **Scan QR** | Dynamique (25s), validation < 50 ms, anti-double utilisation |
 | **Marketplace** | Revente P2P, plafond de prix, royalties automatiques, 2% commission |
 | **Paymaster** | Zero frais blockchain via AVNU Paymaster (sponsorise par l'organisateur) |
 | **Wallet** | Connexion Cartridge Controller via StarkZap (passkeys, biometrie, social login) |
 | **Digital Twin Bridge** | Pont automatique Eventbrite/Weezevent -> NFT Starknet |
 | **Securite** | Soulbound, recovery, sessions Cartridge, circuit breaker, audit red-team (49 correctifs) |
-| **Tests** | 397 tests automatises (87 Cairo + 242 backend + 68 frontend), dont 30 simulations d'attaque |
+| **Tests** | 404 tests automatises (87 Cairo + 243 backend + 74 frontend), dont 30 simulations d'attaque |
 | **CI/CD** | GitHub Actions, 3 pipelines paralleles |
 
 ---

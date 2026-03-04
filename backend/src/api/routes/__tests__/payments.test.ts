@@ -25,6 +25,21 @@ vi.mock("../../../services/starknet.service", () => ({
   verifyERC20Transfer: mockVerifyERC20Transfer,
 }));
 
+// Mock BullMQ Queue
+const { mockMintQueueAdd } = vi.hoisted(() => ({
+  mockMintQueueAdd: vi.fn().mockResolvedValue({}),
+}));
+
+vi.mock("bullmq", () => ({
+  Queue: vi.fn().mockImplementation(() => ({
+    add: mockMintQueueAdd,
+  })),
+}));
+
+vi.mock("../../../db/redis", () => ({
+  bullmqConnection: {},
+}));
+
 import { paymentRoutes } from "../payments";
 
 let app: FastifyInstance;
@@ -158,5 +173,29 @@ describe("POST /v1/payments/verify-crypto", () => {
       expect.stringContaining("0x053b40a647"),
       validPayment.buyerWalletAddress,
     );
+  });
+
+  it("enqueues mint job after successful verification", async () => {
+    mockPrisma.event.findUnique.mockResolvedValue(mockEvent);
+    mockVerifyERC20Transfer.mockResolvedValue(true);
+    mockPrisma.pendingMint.create.mockResolvedValue({
+      id: "mint-42",
+      status: "PENDING",
+      cryptoTxHash: validPayment.txHash,
+    });
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/v1/payments/verify-crypto",
+      payload: validPayment,
+      headers: { authorization: `Bearer ${makeToken()}` },
+    });
+    expect(res.statusCode).toBe(201);
+    expect(mockMintQueueAdd).toHaveBeenCalledWith("mint", {
+      pendingMintId: "mint-42",
+      eventId: validPayment.eventId,
+      buyerEmail: expect.any(String),
+      buyerWalletAddress: validPayment.buyerWalletAddress,
+    });
   });
 });

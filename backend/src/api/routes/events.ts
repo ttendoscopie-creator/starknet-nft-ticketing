@@ -115,7 +115,7 @@ export async function eventRoutes(app: FastifyInstance): Promise<void> {
     const event = await prisma.event.findUnique({
       where: { id: parsed.data.id },
       include: {
-        organizer: { select: { name: true } },
+        organizer: { select: { name: true, treasuryAddress: true } },
         _count: { select: { tickets: true } },
       },
     });
